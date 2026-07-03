@@ -246,6 +246,13 @@ public class NetworkStoreService implements AutoCloseable {
         return getNetworkImpl(network).getUuid();
     }
 
+    /**
+     * Send all buffered modifications of the network to the server, for all its variants at once.
+     * <p>
+     * When variant multi-thread access is allowed on the network, this is a stop-the-world operation: it must not be
+     * called concurrently with modifications made by other threads, or modifications buffered after the flush
+     * started may or may not be part of it.
+     */
     public void flush(Network network) {
         NetworkImpl networkImpl = getNetworkImpl(network);
         networkImpl.getIndex().getStoreClient().flush(networkImpl.getUuid());

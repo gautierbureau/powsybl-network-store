@@ -168,6 +168,7 @@ public class VariantManagerImpl implements VariantManager {
         int variantNum = VariantUtils.getVariantNum(variantId,
             index.getStoreClient().getVariantsInfos(index.getNetwork().getUuid()));
         index.getStoreClient().deleteNetwork(index.getNetwork().getUuid(), variantNum);
+        index.variantRemoved();
         if (notifyRemoved) {
             notifyVariantRemoved(variantId);
         }
@@ -178,11 +179,11 @@ public class VariantManagerImpl implements VariantManager {
 
     @Override
     public void allowVariantMultiThreadAccess(boolean allow) {
-        throw new PowsyblException("Network store implementation does not support multi-thread access yet");
+        index.setVariantMultiThreadAccess(allow);
     }
 
     @Override
     public boolean isVariantMultiThreadAccessAllowed() {
-        return false;
+        return index.isVariantMultiThreadAccessAllowed();
     }
 }

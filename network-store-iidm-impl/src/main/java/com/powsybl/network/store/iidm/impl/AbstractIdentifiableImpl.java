@@ -45,13 +45,25 @@ public abstract class AbstractIdentifiableImpl<I extends Identifiable<I>, D exte
         this.resource = resource;
     }
 
+    /**
+     * Storage of the current variant resource. Overridable so that {@link NetworkImpl} can store its resource in the
+     * index variant context instead of this field, as the network resource depends on the working variant.
+     */
+    protected Resource<D> getStoredResource() {
+        return resource;
+    }
+
+    protected void setStoredResource(Resource<D> resource) {
+        this.resource = resource;
+    }
+
     public void updateResourceWithoutNotification(Consumer<Resource<D>> modifier) {
         updateResourceWithoutNotification(modifier, AttributeFilter.PRIMARY_AS_NULL);
     }
 
     public void updateResourceWithoutNotification(Consumer<Resource<D>> modifier, AttributeFilter attributeFilter) {
-        modifier.accept(resource);
-        index.updateResource(resource, attributeFilter);
+        modifier.accept(getStoredResource());
+        index.updateResource(getStoredResource(), attributeFilter);
     }
 
     public void updateResource(Consumer<Resource<D>> modifier, String attribute, Object oldValue, Object newValue) {
@@ -59,33 +71,33 @@ public abstract class AbstractIdentifiableImpl<I extends Identifiable<I>, D exte
     }
 
     public void updateResource(Consumer<Resource<D>> modifier, AttributeFilter attributeFilter, String attribute, Object oldValue, Object newValue) {
-        modifier.accept(resource);
-        index.updateResource(resource, attributeFilter);
+        modifier.accept(getStoredResource());
+        index.updateResource(getStoredResource(), attributeFilter);
         String variantId = getNetwork().getVariantManager().getWorkingVariantId();
         index.notifyUpdate(this, attribute, variantId, oldValue, newValue);
     }
 
     public void updateResource(Consumer<Resource<D>> modifier, String attribute, String variantId, Object oldValue, Supplier<Object> newValueSupplier) {
-        modifier.accept(resource);
-        index.updateResource(resource, AttributeFilter.PRIMARY_AS_NULL);
+        modifier.accept(getStoredResource());
+        index.updateResource(getStoredResource(), AttributeFilter.PRIMARY_AS_NULL);
         index.notifyUpdate(this, attribute, variantId, oldValue, newValueSupplier.get());
     }
 
     public void updateResourcePropertyAdded(Consumer<Resource<D>> modifier, String attribute, Object newValue) {
-        modifier.accept(resource);
-        index.updateResource(resource, AttributeFilter.PRIMARY_AS_NULL);
+        modifier.accept(getStoredResource());
+        index.updateResource(getStoredResource(), AttributeFilter.PRIMARY_AS_NULL);
         index.notifyPropertyAdded(this, () -> attribute, newValue);
     }
 
     public void updateResourcePropertyReplaced(Consumer<Resource<D>> modifier, String attribute, String oldValue, Object newValue) {
-        modifier.accept(resource);
-        index.updateResource(resource, AttributeFilter.PRIMARY_AS_NULL);
+        modifier.accept(getStoredResource());
+        index.updateResource(getStoredResource(), AttributeFilter.PRIMARY_AS_NULL);
         index.notifyPropertyReplaced(this, () -> attribute, oldValue, newValue);
     }
 
     public void updateResourcePropertyRemoved(Consumer<Resource<D>> modifier, String attribute, String oldValue) {
-        modifier.accept(resource);
-        index.updateResource(resource, AttributeFilter.PRIMARY_AS_NULL);
+        modifier.accept(getStoredResource());
+        index.updateResource(getStoredResource(), AttributeFilter.PRIMARY_AS_NULL);
         index.notifyPropertyRemoved(this, attribute, oldValue);
     }
 
@@ -94,8 +106,8 @@ public abstract class AbstractIdentifiableImpl<I extends Identifiable<I>, D exte
     }
 
     public void updateResourceExtension(Extension<?> extension, Consumer<Resource<D>> modifier, String attribute, Object oldValue, Object newValue) {
-        modifier.accept(resource);
-        index.updateResource(resource, AttributeFilter.PRIMARY_AS_NULL);
+        modifier.accept(getStoredResource());
+        index.updateResource(getStoredResource(), AttributeFilter.PRIMARY_AS_NULL);
         String variantId = getNetwork().getVariantManager().getWorkingVariantId();
         getIndex().notifyExtensionUpdate(extension, attribute, variantId, oldValue, newValue);
     }
@@ -105,15 +117,16 @@ public abstract class AbstractIdentifiableImpl<I extends Identifiable<I>, D exte
     }
 
     public void setResource(Resource<D> resource) {
-        if (resource == null && this.resource != null) {
+        Resource<D> storedResource = getStoredResource();
+        if (resource == null && storedResource != null) {
             // Save idBeforeRemoval when switching from non-null to null resource
-            idBeforeRemoval = this.resource.getId();
+            idBeforeRemoval = storedResource.getId();
         } else if (resource != null) {
             // Clear idBeforeRemoval when setting a non-null resource
             idBeforeRemoval = null;
         }
 
-        this.resource = resource;
+        setStoredResource(resource);
     }
 
     public Resource<D> getResource() {
@@ -124,11 +137,12 @@ public abstract class AbstractIdentifiableImpl<I extends Identifiable<I>, D exte
         if (index.getWorkingVariantNum() == -1) {
             throw new PowsyblException("Variant index not set");
         }
-        return Optional.ofNullable(resource);
+        return Optional.ofNullable(getStoredResource());
     }
 
     public String getId() {
-        return resource == null ? idBeforeRemoval : resource.getId();
+        Resource<D> storedResource = getStoredResource();
+        return storedResource == null ? idBeforeRemoval : storedResource.getId();
     }
 
     @Deprecated
@@ -336,7 +350,7 @@ public abstract class AbstractIdentifiableImpl<I extends Identifiable<I>, D exte
     }
 
     public NetworkImpl getNetwork() {
-        if (resource == null) {
+        if (getStoredResource() == null) {
             throw new PowsyblException("Cannot access network of removed equipment " + getId());
         }
         return index.getNetwork();
@@ -362,8 +376,8 @@ public abstract class AbstractIdentifiableImpl<I extends Identifiable<I>, D exte
         if (!loaderExists(name)) {
             return null;
         }
-        index.loadExtensionAttributes(resource.getType(), resource.getId(), name);
-        if (resource.getAttributes().getExtensionAttributes().containsKey(name)) {
+        index.loadExtensionAttributes(getStoredResource().getType(), getStoredResource().getId(), name);
+        if (getStoredResource().getAttributes().getExtensionAttributes().containsKey(name)) {
             return (E) ExtensionLoaders.findLoaderByName(name).load(this);
         }
         return null;
@@ -376,14 +390,14 @@ public abstract class AbstractIdentifiableImpl<I extends Identifiable<I>, D exte
         }
         extension.cleanup();
         index.notifyExtensionBeforeRemoval(extension);
-        index.removeExtensionAttributes(resource.getType(), resource.getId(), extension.getName());
+        index.removeExtensionAttributes(getStoredResource().getType(), getStoredResource().getId(), extension.getName());
         index.notifyExtensionAfterRemoval(this, extension.getName());
         return true;
     }
 
     public <E extends Extension<I>> Collection<E> getExtensions() {
-        index.loadAllExtensionsAttributesByIdentifiableId(resource.getType(), resource.getId());
-        return resource.getAttributes().getExtensionAttributes().keySet().stream()
+        index.loadAllExtensionsAttributesByIdentifiableId(getStoredResource().getType(), getStoredResource().getId());
+        return getStoredResource().getAttributes().getExtensionAttributes().keySet().stream()
                 .filter(ExtensionLoaders::loaderExists)
                 .map(name -> (E) ExtensionLoaders.findLoaderByName(name).load(this))
                 .collect(Collectors.toList());
@@ -416,7 +430,7 @@ public abstract class AbstractIdentifiableImpl<I extends Identifiable<I>, D exte
 
     @Override
     public MessageHeader getMessageHeader() {
-        return resource.getMessageHeader();
+        return getStoredResource().getMessageHeader();
     }
 
     public NetworkObjectIndex getIndex() {
