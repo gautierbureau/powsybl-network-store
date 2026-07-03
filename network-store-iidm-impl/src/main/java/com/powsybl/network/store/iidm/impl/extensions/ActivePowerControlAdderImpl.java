@@ -21,9 +21,11 @@ public class ActivePowerControlAdderImpl<I extends Injection<I>> extends Abstrac
 
     private boolean participate;
 
-    private double droop;
+    // NaN when not set, like in the core implementation: a droop of 0 means "no participation capacity" for load
+    // flow engines while an absent droop lets them fall back to their default
+    private double droop = Double.NaN;
 
-    private double participationFactor;
+    private double participationFactor = Double.NaN;
 
     private double minTargetP = Double.NaN;
 
