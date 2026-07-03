@@ -20,6 +20,10 @@ import java.util.stream.Collectors;
 /**
  * @author Geoffroy Jamgotchian <geoffroy.jamgotchian at rte-france.com>
  */
+/**
+ * Methods are synchronized on the buffer instance: there is one instance per (network, variant), so threads writing
+ * to distinct variants stay parallel while writes and flush on the same variant are serialized.
+ */
 public class CollectionBuffer<T extends IdentifiableAttributes> {
 
     private final BiConsumer<UUID, List<Resource<T>>> createFct;
@@ -66,15 +70,15 @@ public class CollectionBuffer<T extends IdentifiableAttributes> {
         this.removeFct = removeFct;
     }
 
-    void create(Resource<T> resource) {
+    synchronized void create(Resource<T> resource) {
         createResources.put(resource.getId(), resource);
     }
 
-    void update(Resource<T> resource) {
+    synchronized void update(Resource<T> resource) {
         update(resource, AttributeFilter.PRIMARY_AS_NULL);
     }
 
-    void update(Resource<T> resource, AttributeFilter attributeFilter) {
+    synchronized void update(Resource<T> resource, AttributeFilter attributeFilter) {
         // do not update the resource if a creation resource is already in the buffer
         // (so we don't need to generate an update as the resource has not yet been created
         // on server side and is still on client buffer)
@@ -89,11 +93,11 @@ public class CollectionBuffer<T extends IdentifiableAttributes> {
         }
     }
 
-    void remove(String resourceId) {
+    synchronized void remove(String resourceId) {
         remove(Collections.singletonList(resourceId));
     }
 
-    void remove(List<String> resourceIds) {
+    synchronized void remove(List<String> resourceIds) {
         for (String resourceId : resourceIds) {
             // remove directly from the creation buffer if possible, otherwise remove from the server"
             if (createResources.remove(resourceId) == null) {
@@ -105,7 +109,7 @@ public class CollectionBuffer<T extends IdentifiableAttributes> {
         }
     }
 
-    void flush(UUID networkUuid, int variantNum) {
+    synchronized void flush(UUID networkUuid, int variantNum) {
         if (removeFct != null && !removeResourcesIds.isEmpty()) {
             removeFct.accept(networkUuid, variantNum, new ArrayList<>(removeResourcesIds));
         }
@@ -158,7 +162,7 @@ public class CollectionBuffer<T extends IdentifiableAttributes> {
      * @param resourcePostProcessor a resource post processor
      * @return the buffer clone
      */
-    public CollectionBuffer<T> clone(ObjectMapper objectMapper, int newVariantNum, Consumer<Resource<T>> resourcePostProcessor) {
+    public synchronized CollectionBuffer<T> clone(ObjectMapper objectMapper, int newVariantNum, Consumer<Resource<T>> resourcePostProcessor) {
         List<Resource<T>> clonedCreateResources = Resource.cloneResourcesToVariant(createResources.values(), newVariantNum, objectMapper, resourcePostProcessor);
         List<Resource<T>> clonedUpdateResources = Resource.cloneResourcesToVariant(updateResources.values().stream().map(ResourceAndFilter::getResource).collect(Collectors.toList()), newVariantNum,
                 objectMapper, resourcePostProcessor);
@@ -176,11 +180,11 @@ public class CollectionBuffer<T extends IdentifiableAttributes> {
         return clonedBuffer;
     }
 
-    public Set<String> getCreateResourcesIds() {
-        return createResources.keySet();
+    public synchronized Set<String> getCreateResourcesIds() {
+        return new HashSet<>(createResources.keySet());
     }
 
-    public Set<String> getRemoveResourcesIds() {
-        return removeResourcesIds;
+    public synchronized Set<String> getRemoveResourcesIds() {
+        return new HashSet<>(removeResourcesIds);
     }
 }

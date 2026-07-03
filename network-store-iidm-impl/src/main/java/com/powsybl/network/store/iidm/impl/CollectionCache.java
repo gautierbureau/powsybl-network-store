@@ -19,6 +19,10 @@ import java.util.stream.Collectors;
 
 /**
  * Identifiable collection cache management.
+ * <p>
+ * Public methods are synchronized on the cache instance: as there is one instance per (network, variant), threads
+ * working on distinct variants stay parallel while accesses to the same variant collection are serialized, including
+ * the load from the server which is thus done only once.
  *
  * @author Geoffroy Jamgotchian <geoffroy.jamgotchian at rte-france.com>
  */
@@ -131,11 +135,11 @@ public class CollectionCache<T extends IdentifiableAttributes> {
         this.delegate = delegate;
     }
 
-    public boolean isResourceLoaded(String id) {
+    public synchronized boolean isResourceLoaded(String id) {
         return resources.containsKey(id);
     }
 
-    public List<Resource<T>> getCachedResources() {
+    public synchronized List<Resource<T>> getCachedResources() {
         return new ArrayList<>(resources.values());
     }
 
@@ -143,20 +147,20 @@ public class CollectionCache<T extends IdentifiableAttributes> {
      * Declare the collection as fully initialized. It means that the collection exists on client side but not yet on server
      * side and that even if empty the collection is fully loaded.
      */
-    public void init() {
+    public synchronized void init() {
         fullyLoaded = true;
         fullyLoadedExtensions = true;
         fullyLoadedOperationalLimitsGroup = true;
         fullyLoadedSelectedOperationalLimitsGroup = true;
     }
 
-    public boolean isFullyLoaded() {
+    public synchronized boolean isFullyLoaded() {
         return fullyLoaded;
     }
 
     /**
      */
-    public void initContainer(String containerId) {
+    public synchronized void initContainer(String containerId) {
         Objects.requireNonNull(containerId);
 
         containerFullyLoaded.add(containerId);
@@ -168,7 +172,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
      * @param id id of the resource
      * @return a resource from the collection
      */
-    public Optional<Resource<T>> getResource(UUID networkUuid, int variantNum, String id) {
+    public synchronized Optional<Resource<T>> getResource(UUID networkUuid, int variantNum, String id) {
         Objects.requireNonNull(id);
 
         Resource<T> resource = null;
@@ -230,7 +234,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
      * the server.
      * @return all resources of the collection
      */
-    public List<Resource<T>> getResources(UUID networkUuid, int variantNum) {
+    public synchronized List<Resource<T>> getResources(UUID networkUuid, int variantNum) {
         loadAll(networkUuid, variantNum);
         return new ArrayList<>(resources.values());
     }
@@ -245,7 +249,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
      * @param containerId the container id
      * @return all resources of the collection that belongs to the container
      */
-    public List<Resource<T>> getContainerResources(UUID networkUuid, int variantNum, String containerId) {
+    public synchronized List<Resource<T>> getContainerResources(UUID networkUuid, int variantNum, String containerId) {
         Objects.requireNonNull(containerId);
         if (containerLoaderFunction == null) {
             throw new PowsyblException("it is not possible to load resources by container, if container resources loader has not been specified");
@@ -275,7 +279,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
      *
      * @param resource the resource to add or replace in the cache
      */
-    public void addOrReplaceResource(Resource<T> resource) {
+    public synchronized void addOrReplaceResource(Resource<T> resource) {
         Objects.requireNonNull(resource);
 
         // full cache update
@@ -295,7 +299,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
      *
      * @param resource the newly created resources
      */
-    public void createResource(Resource<T> resource) {
+    public synchronized void createResource(Resource<T> resource) {
         String resourceId = resource.getId();
         if (resources.containsKey(resourceId)) {
             throw new PowsyblException("The collection cache already contains a " + resource.getType() + " with the id '" + resourceId + "'");
@@ -309,7 +313,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
      *
      * @param resource the resource to update
      */
-    public void updateResource(Resource<T> resource) {
+    public synchronized void updateResource(Resource<T> resource) {
         addOrReplaceResource(resource);
     }
 
@@ -318,7 +322,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
      *
      * @param id the id of the resource to remove
      */
-    public void removeResource(String id) {
+    public synchronized void removeResource(String id) {
         Objects.requireNonNull(id);
         // keep track of removed extension attributes
         removeExtensionAttributesByIdentifiableId(id);
@@ -336,7 +340,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
         }
     }
 
-    public void removeResources(List<String> ids) {
+    public synchronized void removeResources(List<String> ids) {
         Objects.requireNonNull(ids);
         ids.forEach(this::removeResource);
     }
@@ -346,7 +350,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
      *
      * @return the resource count
      */
-    public int getResourceCount(UUID networkUuid, int variantNum) {
+    public synchronized int getResourceCount(UUID networkUuid, int variantNum) {
         // the only reliable way to get count is to fully load the collection
         loadAll(networkUuid, variantNum);
         return resources.size();
@@ -360,7 +364,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
      * @param resourcePostProcessor a resource post processor
      * @return the cache clone
      */
-    public CollectionCache<T> clone(ObjectMapper objectMapper, int newVariantNum, Consumer<Resource<T>> resourcePostProcessor) {
+    public synchronized CollectionCache<T> clone(ObjectMapper objectMapper, int newVariantNum, Consumer<Resource<T>> resourcePostProcessor) {
         // use json serialization to clone the resources of source collection
         List<Resource<T>> clonedResources = Resource.cloneResourcesToVariant(resources.values(), newVariantNum, objectMapper, resourcePostProcessor);
 
@@ -403,7 +407,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
         return clonedCache;
     }
 
-    public Optional<ExtensionAttributes> getExtensionAttributes(UUID networkUuid, int variantNum, ResourceType type, String identifiableId, String extensionName) {
+    public synchronized Optional<ExtensionAttributes> getExtensionAttributes(UUID networkUuid, int variantNum, ResourceType type, String identifiableId, String extensionName) {
         Objects.requireNonNull(identifiableId);
 
         if (isExtensionAttributesCached(identifiableId, extensionName)) {
@@ -472,7 +476,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
     /**
      * Load all the extensions attributes with specified extension name for all the identifiables of the collection in the cache.
      */
-    public void loadAllExtensionsAttributesByResourceTypeAndExtensionName(UUID networkUuid, int variantNum, ResourceType type, String extensionName) {
+    public synchronized void loadAllExtensionsAttributesByResourceTypeAndExtensionName(UUID networkUuid, int variantNum, ResourceType type, String extensionName) {
         if (!isFullyLoadedExtension(extensionName)) {
             // if collection has not yet been fully loaded we load it from the server
             Map<String, ExtensionAttributes> extensionAttributesMap = delegate.getAllExtensionsAttributesByResourceTypeAndExtensionName(networkUuid, variantNum, type, extensionName);
@@ -486,7 +490,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
     /**
      * Get all extension attributes for one identifiable of the collection.
      */
-    public Map<String, ExtensionAttributes> getAllExtensionsAttributesByIdentifiableId(UUID networkUuid, int variantNum, ResourceType type, String identifiableId) {
+    public synchronized Map<String, ExtensionAttributes> getAllExtensionsAttributesByIdentifiableId(UUID networkUuid, int variantNum, ResourceType type, String identifiableId) {
         Objects.requireNonNull(identifiableId);
         if (isExtensionAttributesCached(identifiableId)) {
             return getCachedExtensionAttributes(identifiableId);
@@ -532,7 +536,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
     /**
      * Load all the extensions attributes for all the identifiables with specified resource type in the cache
      */
-    public void loadAllExtensionsAttributesByResourceType(UUID networkUuid, int variantNum, ResourceType type) {
+    public synchronized void loadAllExtensionsAttributesByResourceType(UUID networkUuid, int variantNum, ResourceType type) {
         if (!fullyLoadedExtensions) {
             // if collection has not yet been fully loaded we load it from the server
             Map<String, Map<String, ExtensionAttributes>> extensionAttributesMap = delegate.getAllExtensionsAttributesByResourceType(networkUuid, variantNum, type);
@@ -543,7 +547,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
         }
     }
 
-    public void removeExtensionAttributesByExtensionName(String identifiableId, String extensionName) {
+    public synchronized void removeExtensionAttributesByExtensionName(String identifiableId, String extensionName) {
         Objects.requireNonNull(identifiableId);
         Objects.requireNonNull(extensionName);
         if (resources.containsKey(identifiableId)) {
@@ -552,7 +556,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
         }
     }
 
-    public void removeExtensionAttributesByIdentifiableId(String identifiableId) {
+    public synchronized void removeExtensionAttributesByIdentifiableId(String identifiableId) {
         Objects.requireNonNull(identifiableId);
         if (resources.containsKey(identifiableId)) {
             Set<String> removedExtensionNames = getCachedExtensionAttributes(identifiableId).keySet();
@@ -562,7 +566,8 @@ public class CollectionCache<T extends IdentifiableAttributes> {
     }
 
     // limits
-    public List<OperationalLimitsGroupAttributes> getOperationalLimitsGroupAttributesForBranchSide(UUID networkUuid, int variantNum, ResourceType resourceType, String branchId, int side) {
+    public synchronized List<OperationalLimitsGroupAttributes> getOperationalLimitsGroupAttributesForBranchSide(UUID networkUuid, int variantNum, ResourceType resourceType,
+                                                                                                                 String branchId, int side) {
         Objects.requireNonNull(branchId);
         if (removedResources.contains(branchId)) {
             return Collections.emptyList();
@@ -579,12 +584,12 @@ public class CollectionCache<T extends IdentifiableAttributes> {
         }
     }
 
-    public Optional<OperationalLimitsGroupAttributes> getOperationalLimitsAttributes(UUID networkUuid, int variantNum, ResourceType type,
+    public synchronized Optional<OperationalLimitsGroupAttributes> getOperationalLimitsAttributes(UUID networkUuid, int variantNum, ResourceType type,
                                                                                      String branchId, String operationalLimitGroupName, int side) {
         return getOperationalLimitsAttributes(networkUuid, variantNum, type, branchId, operationalLimitGroupName, side, fullyLoadedOperationalLimitsGroup);
     }
 
-    public Optional<OperationalLimitsGroupAttributes> getSelectedOperationalLimitsAttributes(UUID networkUuid, int variantNum, ResourceType type,
+    public synchronized Optional<OperationalLimitsGroupAttributes> getSelectedOperationalLimitsAttributes(UUID networkUuid, int variantNum, ResourceType type,
                                                                                      String branchId, String operationalLimitGroupName, int side) {
         return getOperationalLimitsAttributes(networkUuid, variantNum, type, branchId, operationalLimitGroupName, side, fullyLoadedSelectedOperationalLimitsGroup);
     }
@@ -599,7 +604,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
         return operationalLimitsGroups != null && operationalLimitsGroups.containsKey(operationalLimitGroupName);
     }
 
-    public Optional<OperationalLimitsGroupAttributes> getOperationalLimitsAttributes(UUID networkUuid, int variantNum, ResourceType type,
+    public synchronized Optional<OperationalLimitsGroupAttributes> getOperationalLimitsAttributes(UUID networkUuid, int variantNum, ResourceType type,
                                                                                      String branchId, String operationalLimitGroupName, int side,
                                                                                      boolean limitsFullyLoaded) {
         Objects.requireNonNull(branchId);
@@ -648,7 +653,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
     /**
      * Get all the operational limits group attributes for all the identifiables with specified resource type in the cache
      */
-    public void loadAllOperationalLimitsGroupAttributesByResourceType(UUID networkUuid, int variantNum, ResourceType type) {
+    public synchronized void loadAllOperationalLimitsGroupAttributesByResourceType(UUID networkUuid, int variantNum, ResourceType type) {
         if (!fullyLoadedOperationalLimitsGroup) {
             // if collection has not yet been fully loaded we load it from the server
             Map<String, Map<Integer, Map<String, OperationalLimitsGroupAttributes>>> operationalLimitsGroupAttributesMap =
@@ -663,7 +668,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
     /**
      * Get all selected the operational limits group attributes for all the identifiables with specified resource type in the cache
      */
-    public void loadAllSelectedOperationalLimitsGroupAttributesByResourceType(UUID networkUuid, int variantNum, ResourceType type) {
+    public synchronized void loadAllSelectedOperationalLimitsGroupAttributesByResourceType(UUID networkUuid, int variantNum, ResourceType type) {
         if (!fullyLoadedSelectedOperationalLimitsGroup) {
             // if collection has not yet been fully loaded we load it from the server
             Map<String, Map<Integer, Map<String, OperationalLimitsGroupAttributes>>> operationalLimitsGroupAttributesMap =
@@ -696,7 +701,7 @@ public class CollectionCache<T extends IdentifiableAttributes> {
         });
     }
 
-    public void removeOperationalLimitsGroupAttributes(Map<String, Map<Integer, Set<String>>> operationalLimitsGroupsToDelete) {
+    public synchronized void removeOperationalLimitsGroupAttributes(Map<String, Map<Integer, Set<String>>> operationalLimitsGroupsToDelete) {
         removedOperationalLimitsAttributes.putAll(operationalLimitsGroupsToDelete);
         for (Map.Entry<String, Map<Integer, Set<String>>> entry : operationalLimitsGroupsToDelete.entrySet()) {
             String branchId = entry.getKey();
