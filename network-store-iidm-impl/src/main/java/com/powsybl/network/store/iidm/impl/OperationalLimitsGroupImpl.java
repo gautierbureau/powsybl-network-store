@@ -101,6 +101,29 @@ public class OperationalLimitsGroupImpl<S> extends AbstractPropertiesHolder impl
         return new DefaultMessageHeader("Operational limits group ", getId());
     }
 
+    /**
+     * A new instance of this wrapper is created on each operational limits group lookup, unlike in the core
+     * implementation where the same instance is always returned for a given group. Equality is thus defined on the
+     * wrapped group identity (owner, side, group id) so that instances from different lookups can be used
+     * interchangeably as map keys, as done for example by the CGMES import to accumulate the limits of a group in a
+     * single adder.
+     */
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof OperationalLimitsGroupImpl<?> other)) {
+            return false;
+        }
+        return owner == other.owner && Objects.equals(side, other.side) && Objects.equals(getId(), other.getId());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(System.identityHashCode(owner), side, getId());
+    }
+
     @Override
     protected Map<String, String> getProperties() {
         return attributes.getProperties();
