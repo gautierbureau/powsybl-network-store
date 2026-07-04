@@ -392,3 +392,17 @@ Findings:
   fills the shared client cache, so REBUILD's redundant per-thread builds cost CPU, not
   REST. COPY's gain here is the saved rebuild CPU and the removal of the build lock; the
   gain grows with network size and thread count.
+- **Strategic update — COPY mode no longer requires this feature for plain SA** (second
+  commit on the OLF `sa_mt_copy_limits_prewarm` branch): once the run phase is IIDM-free,
+  the only remaining worker-side IIDM readers are the actions (converted per partition
+  network), the state monitors and the result extensions (branch results read nominal
+  voltages from the terminals). Without those, OLF now skips `allowVariantMultiThreadAccess`
+  and the worker-side `setWorkingVariant` entirely. Verified: a 3-thread COPY-mode SA runs
+  on an **unmodified network-store main** client with results identical to single-thread
+  (0.38 s vs 1.47 s warm), while REBUILD mode still throws the stub exception. Consequences
+  for this branch: this feature remains required for REBUILD-mode SA, for SA with
+  actions/monitors/result extensions, for multi-thread sensitivity analysis (not audited on
+  the OLF side yet), and for any downstream per-thread variant workflow (parallel load
+  flows on distinct variants, the gridsuite clone-per-contingency pattern) — but the most
+  common gridsuite scenario (plain MT security analysis) gets an escape hatch that works
+  before this branch is merged.
