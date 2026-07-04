@@ -83,9 +83,19 @@ public class BufferedNetworkStoreClientTest {
         restStoreClient = new RestNetworkStoreClient(restClient);
     }
 
+    private BufferedNetworkStoreClient bulkFlushEnabledClient() {
+        // the bulk flush is opt-in: enable it before the client construction reads the property
+        System.setProperty(BufferedNetworkStoreClient.BULK_FLUSH_PROPERTY_NAME, "true");
+        try {
+            return new BufferedNetworkStoreClient(restStoreClient, ForkJoinPool.commonPool());
+        } finally {
+            System.clearProperty(BufferedNetworkStoreClient.BULK_FLUSH_PROPERTY_NAME);
+        }
+    }
+
     @Test
     public void testBulkFlushSingleVariant() throws IOException {
-        BufferedNetworkStoreClient bufferedClient = new BufferedNetworkStoreClient(restStoreClient, ForkJoinPool.commonPool());
+        BufferedNetworkStoreClient bufferedClient = bulkFlushEnabledClient();
         UUID networkUuid = UUID.randomUUID();
         Resource<LoadAttributes> loadV1 = Resource.loadBuilder()
                 .id("load1")
@@ -116,7 +126,7 @@ public class BufferedNetworkStoreClientTest {
 
     @Test
     public void testBulkFlushFallbackWhenNotSupported() throws IOException {
-        BufferedNetworkStoreClient bufferedClient = new BufferedNetworkStoreClient(restStoreClient, ForkJoinPool.commonPool());
+        BufferedNetworkStoreClient bufferedClient = bulkFlushEnabledClient();
         UUID networkUuid = UUID.randomUUID();
         Resource<LoadAttributes> loadV1 = Resource.loadBuilder()
                 .id("load1")
@@ -163,12 +173,11 @@ public class BufferedNetworkStoreClientTest {
         bufferedClient.updateLoads(networkUuid, List.of(loadV1), null);
         bufferedClient.updateLoads(networkUuid, List.of(loadV2), null);
 
-        // flushing one variant sends only this variant's buffers (in one bulk update request)
-        server.expect(ExpectedCount.once(), requestTo("/networks/" + networkUuid + "/1/bulk-update"))
-                .andExpect(method(POST))
-                .andExpect(content().string(org.hamcrest.Matchers.allOf(
-                        org.hamcrest.Matchers.containsString("\"p0\":10.0"),
-                        org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("\"p0\":20.0")))))
+        // flushing one variant sends only this variant's buffers (bulk flush is opt-in, so the
+        // per type requests are used here)
+        server.expect(ExpectedCount.once(), requestTo("/networks/" + networkUuid + "/loads"))
+                .andExpect(method(PUT))
+                .andExpect(content().string(objectMapper.writeValueAsString(List.of(loadV1))))
                 .andRespond(withSuccess());
         bufferedClient.flush(networkUuid, 1);
         server.verify();

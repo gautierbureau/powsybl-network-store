@@ -204,10 +204,20 @@ public class BufferedNetworkStoreClient extends AbstractForwardingNetworkStoreCl
             .configure(DeserializationFeature.READ_DATE_TIMESTAMPS_AS_NANOSECONDS, false);
 
     /**
-     * Whether the server exposes the bulk update endpoint; reset to false at the first 404 so that
-     * later flushes go straight to the per type requests.
+     * Opt-in for the single request per variant flush: the per type requests are sent in parallel,
+     * so on a direct connection one request or ten cost the same wall time and the bundle only
+     * adds serialization work; the bundle wins when the requests cannot be parallelized, e.g. an
+     * http client pool with a per route connection cap (Apache http client defaults to 5) or per
+     * connection TLS setup. Measured on the clone-per-contingency benchmark: localhost slight
+     * loss, 5 ms latency with an uncapped pool a wash.
      */
-    private volatile boolean bulkUpdateSupported = true;
+    public static final String BULK_FLUSH_PROPERTY_NAME = "powsybl.network-store.bulk-flush";
+
+    /**
+     * Whether to try the bulk update endpoint (see {@link #BULK_FLUSH_PROPERTY_NAME}); reset to
+     * false at the first 404 so that later flushes go straight to the per type requests.
+     */
+    private volatile boolean bulkUpdateSupported = Boolean.getBoolean(BULK_FLUSH_PROPERTY_NAME);
 
     public BufferedNetworkStoreClient(RestNetworkStoreClient delegate, ExecutorService executorService) {
         super(delegate);
