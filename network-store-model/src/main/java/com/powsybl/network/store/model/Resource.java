@@ -8,15 +8,16 @@ package com.powsybl.network.store.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.util.TokenBuffer;
 import com.powsybl.iidm.network.DefaultMessageHeader;
 import com.powsybl.iidm.network.Validable;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 
+import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.Collection;
 import java.util.List;
@@ -199,13 +200,15 @@ public class Resource<T extends Attributes> implements Validable {
     public static <T extends IdentifiableAttributes> List<Resource<T>> cloneResourcesToVariant(
         Collection<Resource<T>> resources, int newVariantNum,
         ObjectMapper objectMapper, Consumer<Resource<T>> resourcePostProcessor) {
-        // use json serialization to clone the resources of source collection
+        // clone the resources of the source collection through jackson, like a json serialization round trip but
+        // using a token buffer instead of a string: same serializers so same copy semantics, without the text
+        // encoding and parsing cost
         List<Resource<T>> clonedResources;
-        try {
-            var json = objectMapper.writeValueAsString(resources);
-            clonedResources = objectMapper.readValue(json, new TypeReference<>() {
+        try (TokenBuffer buffer = new TokenBuffer(objectMapper, false)) {
+            objectMapper.writeValue(buffer, resources);
+            clonedResources = objectMapper.readValue(buffer.asParser(), new TypeReference<>() {
             });
-        } catch (JsonProcessingException e) {
+        } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
         // reassign cloned resources to new variant number
