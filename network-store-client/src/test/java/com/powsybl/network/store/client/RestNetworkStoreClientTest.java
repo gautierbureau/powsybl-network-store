@@ -181,10 +181,8 @@ public class RestNetworkStoreClientTest {
                 .andExpect(method(GET))
                 .andRespond(withSuccess(breakersJson, MediaType.APPLICATION_JSON));
 
-        server.expect(requestTo("/networks/" + networkUuid))
-                .andExpect(method(GET))
-                .andRespond(withSuccess(objectMapper.writeValueAsString(List.of(new VariantInfos(VariantManagerConstants.INITIAL_VARIANT_ID, Resource.INITIAL_VARIANT_NUM))),
-                        MediaType.APPLICATION_JSON));
+        // note: no variants infos request anymore: without listeners on the network, attribute updates do not
+        // resolve the working variant id
 
         // line
         Resource<LineAttributes> line = Resource.lineBuilder()

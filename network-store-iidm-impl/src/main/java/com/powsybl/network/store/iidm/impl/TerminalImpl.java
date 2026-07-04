@@ -49,7 +49,7 @@ public class TerminalImpl<U extends IdentifiableAttributes> implements Terminal,
             public void moveConnectable(int node, String voltageLevelId) {
                 TopologyPoint oldTopologyPoint = TerminalImpl.this.getTopologyPoint();
                 super.moveConnectable(node, voltageLevelId);
-                index.notifyUpdate(connectable, "terminal" + getSide().getNum(), index.getNetwork().getVariantManager().getWorkingVariantId(), oldTopologyPoint, TerminalImpl.this.getTopologyPoint());
+                index.notifyUpdate(connectable, "terminal" + getSide().getNum(), oldTopologyPoint, TerminalImpl.this.getTopologyPoint());
             }
         };
         busBreakerView = new TerminalBusBreakerViewImpl<>(index, connectable, attributesGetter) {
@@ -57,7 +57,7 @@ public class TerminalImpl<U extends IdentifiableAttributes> implements Terminal,
             public void moveConnectable(String busId, boolean connected) {
                 TopologyPoint oldTopologyPoint = TerminalImpl.this.getTopologyPoint();
                 super.moveConnectable(busId, connected);
-                index.notifyUpdate(connectable, "terminal" + getSide().getNum(), index.getNetwork().getVariantManager().getWorkingVariantId(), oldTopologyPoint, TerminalImpl.this.getTopologyPoint());
+                index.notifyUpdate(connectable, "terminal" + getSide().getNum(), oldTopologyPoint, TerminalImpl.this.getTopologyPoint());
             }
         };
         busView = new TerminalBusViewImpl<>(index, connectable, attributesGetter);
@@ -310,7 +310,7 @@ public class TerminalImpl<U extends IdentifiableAttributes> implements Terminal,
         Resource<VoltageLevelAttributes> voltageLevelResource = getVoltageLevelResource();
         VoltageLevelAttributes voltageLevelAttributes = voltageLevelResource.getAttributes();
         boolean connectedBefore = isConnected();
-        index.notifyUpdate(getConnectable(), "beginConnect", index.getNetwork().getVariantManager().getWorkingVariantId(), connectedBefore, null);
+        index.notifyUpdate(getConnectable(), "beginConnect", connectedBefore, null);
         if (isNodeBeakerTopologyKind()) {
             if (connectNodeBreaker(isTypeSwitchToOperate)) {
                 done = true;
@@ -324,7 +324,7 @@ public class TerminalImpl<U extends IdentifiableAttributes> implements Terminal,
         }
 
         boolean connectedAfter = isConnected();
-        index.notifyUpdate(getConnectable(), "endConnect", index.getNetwork().getVariantManager().getWorkingVariantId(), null, connectedAfter);
+        index.notifyUpdate(getConnectable(), "endConnect", null, connectedAfter);
 
         if (done) {
             // to invalidate calculated buses
@@ -521,7 +521,7 @@ public class TerminalImpl<U extends IdentifiableAttributes> implements Terminal,
         Resource<VoltageLevelAttributes> voltageLevelResource = getVoltageLevelResource();
         VoltageLevelAttributes voltageLevelAttributes = voltageLevelResource.getAttributes();
         boolean disconnectedBefore = !isConnected();
-        index.notifyUpdate(getConnectable(), "beginDisconnect", index.getNetwork().getVariantManager().getWorkingVariantId(), disconnectedBefore, null);
+        index.notifyUpdate(getConnectable(), "beginDisconnect", disconnectedBefore, null);
         if (isNodeBeakerTopologyKind()) {
             if (disconnectNodeBreaker(isSwitchOpenable)) {
                 done = true;
@@ -533,7 +533,7 @@ public class TerminalImpl<U extends IdentifiableAttributes> implements Terminal,
         }
 
         boolean disconnectedAfter = !isConnected();
-        index.notifyUpdate(getConnectable(), "endDisconnect", index.getNetwork().getVariantManager().getWorkingVariantId(), null, disconnectedAfter);
+        index.notifyUpdate(getConnectable(), "endDisconnect", null, disconnectedAfter);
 
         if (done) {
             // to invalidate calculated buses

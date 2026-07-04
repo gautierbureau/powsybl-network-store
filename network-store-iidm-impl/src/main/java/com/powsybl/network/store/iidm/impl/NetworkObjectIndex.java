@@ -525,6 +525,12 @@ public class NetworkObjectIndex {
         }
     }
 
+    public void notifyExtensionUpdate(Extension<?> extension, String attribute, Object oldValue, Object newValue) {
+        if (!network.getListeners().isEmpty() && !Objects.equals(oldValue, newValue)) {
+            notifyExtensionUpdate(extension, attribute, network.getVariantManager().getWorkingVariantId(), oldValue, newValue);
+        }
+    }
+
     public void notifyExtensionUpdate(Extension<?> extension, String attribute, String variantId, Object oldValue, Object newValue) {
         if (!Objects.equals(oldValue, newValue)) {
             for (NetworkListener listener : network.getListeners()) {
@@ -544,6 +550,28 @@ public class NetworkObjectIndex {
             } catch (Exception t) {
                 LOGGER.error(t.toString(), t);
             }
+        }
+    }
+
+    /**
+     * Same as {@link #notifyUpdate(Identifiable, String, String, Object, Object)} but resolving the working variant
+     * id only if there are listeners to notify, as the resolution has a cost and this is on the path of every
+     * attribute update.
+     */
+    public void notifyUpdate(Identifiable<?> identifiable, String attribute, Object oldValue, Object newValue) {
+        if (!network.getListeners().isEmpty() && !Objects.equals(oldValue, newValue)) {
+            notifyUpdate(identifiable, attribute, network.getVariantManager().getWorkingVariantId(), oldValue, newValue);
+        }
+    }
+
+    /**
+     * Notify an update of a variant independent (structural) attribute, materializing the new value only if there
+     * are listeners to notify. The variant id of the event is null, like in the core implementation for these
+     * attributes.
+     */
+    public void notifyUpdateLazy(Identifiable<?> identifiable, String attribute, Object oldValue, Supplier<Object> newValueSupplier) {
+        if (!network.getListeners().isEmpty()) {
+            notifyUpdate(identifiable, attribute, null, oldValue, newValueSupplier.get());
         }
     }
 
