@@ -21,6 +21,9 @@ public class RawExtensionAttributesDeserializer extends JsonDeserializer<RawExte
     @Override
     public RawExtensionAttributes deserialize(JsonParser p, DeserializationContext context) throws IOException {
         Map<String, Object> attributes = p.readValueAs(Map.class);
-        return new RawExtensionAttributes(attributes);
+        // the type property is visible (see ExtensionAttributes): extract the extension name from
+        // the body so it can be restored when this unknown extension is serialized back
+        String extensionName = (String) attributes.remove("extensionName");
+        return new RawExtensionAttributes(extensionName, attributes);
     }
 }

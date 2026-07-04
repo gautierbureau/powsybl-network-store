@@ -7,6 +7,7 @@
 package com.powsybl.network.store.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.databind.annotation.JsonTypeIdResolver;
 
@@ -15,9 +16,14 @@ import com.fasterxml.jackson.databind.annotation.JsonTypeIdResolver;
  */
 @JsonTypeInfo(
         use = JsonTypeInfo.Id.NAME,
-        property = "extensionName"
+        property = "extensionName",
+        // the type property is exposed to the deserializers so that an extension unknown on this
+        // side (version skew between client and server) keeps its name in RawExtensionAttributes
+        // and can be serialized back: without it the store cannot round trip such an extension
+        visible = true
 )
 @JsonTypeIdResolver(ExtensionAttributesIdResolver.class)
+@JsonIgnoreProperties("extensionName")
 public interface ExtensionAttributes {
     // This property is used to not persist some extensions that are only used at import/export.
     @JsonIgnore
