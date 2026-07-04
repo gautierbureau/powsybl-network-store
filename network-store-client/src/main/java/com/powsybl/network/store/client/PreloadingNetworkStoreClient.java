@@ -50,17 +50,42 @@ public class PreloadingNetworkStoreClient extends AbstractForwardingNetworkStore
         ResourceType.TIE_LINE
     );
 
-    private final boolean allCollectionsNeededForBusView;
+    /**
+     * The collections a computation (load flow, security analysis...) reads: everything the bus view
+     * needs, plus the switches (node/breaker topology) and the configured buses (bus/breaker topology).
+     */
+    static final Set<ResourceType> RESOURCE_TYPES_NEEDED_FOR_COMPUTATION;
+
+    static {
+        Set<ResourceType> resourceTypes = EnumSet.copyOf(RESOURCE_TYPES_NEEDED_FOR_BUS_VIEW);
+        resourceTypes.add(ResourceType.SWITCH);
+        resourceTypes.add(ResourceType.CONFIGURED_BUS);
+        RESOURCE_TYPES_NEEDED_FOR_COMPUTATION = Collections.unmodifiableSet(resourceTypes);
+    }
+
+    /**
+     * The resource types whose selected operational limits groups are lazily bulk loaded on first
+     * access (see {@link #getSelectedOperationalLimitsGroupAttributes}): limits based computations
+     * (e.g. a security analysis) read them for every branch, so the computation preloading strategy
+     * fetches them upfront, chained after their own collection load (the attributes are injected
+     * into the cached branch resources) but in parallel across types.
+     */
+    static final Set<ResourceType> RESOURCE_TYPES_WITH_SELECTED_LIMITS = Set.of(
+        ResourceType.LINE,
+        ResourceType.TWO_WINDINGS_TRANSFORMER
+    );
+
+    private final PreloadingStrategy preloadingStrategy;
 
     private final ExecutorService executorService;
 
     private final NetworkCollectionIndex<Set<ResourceType>> cachedResourceTypes
             = new NetworkCollectionIndex<>(() -> EnumSet.noneOf(ResourceType.class));
 
-    public PreloadingNetworkStoreClient(CachedNetworkStoreClient delegate, boolean allCollectionsNeededForBusView,
+    public PreloadingNetworkStoreClient(CachedNetworkStoreClient delegate, PreloadingStrategy preloadingStrategy,
                                         ExecutorService executorService) {
         super(delegate);
-        this.allCollectionsNeededForBusView = allCollectionsNeededForBusView;
+        this.preloadingStrategy = Objects.requireNonNull(preloadingStrategy);
         this.executorService = Objects.requireNonNull(executorService);
     }
 
@@ -91,17 +116,27 @@ public class PreloadingNetworkStoreClient extends AbstractForwardingNetworkStore
         }
     }
 
-    private void loadAllCollectionsNeededForBusView(UUID networkUuid, int variantNum, Set<ResourceType> resourceTypes) {
-        // directly load all collections
+    private void loadAllCollections(UUID networkUuid, int variantNum, Set<ResourceType> resourceTypesToLoad,
+                                    boolean withSelectedOperationalLimitsGroups, Set<ResourceType> resourceTypes) {
+        // directly load all collections, in parallel; when requested, each branchy type's selected
+        // operational limits groups are loaded in the same task, right after its collection (they are
+        // injected into the cached branch resources, so the collection must be there first)
         Stopwatch stopwatch = Stopwatch.createStarted();
-        List<Future<?>> futures = new ArrayList<>(RESOURCE_TYPES_NEEDED_FOR_BUS_VIEW.size());
-        for (ResourceType resourceType : RESOURCE_TYPES_NEEDED_FOR_BUS_VIEW) {
-            futures.add(executorService.submit(() -> loadToCache(resourceType, networkUuid, variantNum)));
+        List<Future<?>> futures = new ArrayList<>(resourceTypesToLoad.size());
+        for (ResourceType resourceType : resourceTypesToLoad) {
+            futures.add(executorService.submit(() -> {
+                loadToCache(resourceType, networkUuid, variantNum);
+                if (withSelectedOperationalLimitsGroups && RESOURCE_TYPES_WITH_SELECTED_LIMITS.contains(resourceType)) {
+                    delegate.loadAllSelectedOperationalLimitsGroupAttributesByResourceType(networkUuid, variantNum, resourceType);
+                }
+            }));
         }
         ExecutorUtil.waitAllFutures(futures);
-        resourceTypes.addAll(RESOURCE_TYPES_NEEDED_FOR_BUS_VIEW);
+        resourceTypes.addAll(resourceTypesToLoad);
         stopwatch.stop();
-        LOGGER.info("All collections needed for bus view loaded in {} ms", stopwatch.elapsed(TimeUnit.MILLISECONDS));
+        LOGGER.info("{} collections{} loaded in {} ms", resourceTypesToLoad.size(),
+            withSelectedOperationalLimitsGroups ? " (with selected operational limits groups)" : "",
+            stopwatch.elapsed(TimeUnit.MILLISECONDS));
     }
 
     boolean isResourceTypeCached(UUID networkUuid, int variantNum, ResourceType resourceType) {
@@ -115,8 +150,12 @@ public class PreloadingNetworkStoreClient extends AbstractForwardingNetworkStore
         Objects.requireNonNull(networkUuid);
         Set<ResourceType> resourceTypes = cachedResourceTypes.getCollection(networkUuid, variantNum);
         if (!resourceTypes.contains(resourceType)) {
-            if (allCollectionsNeededForBusView && RESOURCE_TYPES_NEEDED_FOR_BUS_VIEW.contains(resourceType)) {
-                loadAllCollectionsNeededForBusView(networkUuid, variantNum, resourceTypes);
+            if (preloadingStrategy == PreloadingStrategy.ALL_COLLECTIONS_NEEDED_FOR_COMPUTATION
+                && RESOURCE_TYPES_NEEDED_FOR_COMPUTATION.contains(resourceType)) {
+                loadAllCollections(networkUuid, variantNum, RESOURCE_TYPES_NEEDED_FOR_COMPUTATION, true, resourceTypes);
+            } else if (preloadingStrategy == PreloadingStrategy.ALL_COLLECTIONS_NEEDED_FOR_BUS_VIEW
+                && RESOURCE_TYPES_NEEDED_FOR_BUS_VIEW.contains(resourceType)) {
+                loadAllCollections(networkUuid, variantNum, RESOURCE_TYPES_NEEDED_FOR_BUS_VIEW, false, resourceTypes);
             } else {
                 loadToCache(resourceType, networkUuid, variantNum);
                 resourceTypes.add(resourceType);

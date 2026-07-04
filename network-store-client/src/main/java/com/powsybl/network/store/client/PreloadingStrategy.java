@@ -12,5 +12,12 @@ package com.powsybl.network.store.client;
 public enum PreloadingStrategy {
     NONE,
     COLLECTION,
-    ALL_COLLECTIONS_NEEDED_FOR_BUS_VIEW
+    ALL_COLLECTIONS_NEEDED_FOR_BUS_VIEW,
+    /**
+     * Everything a computation (load flow, security analysis...) reads, loaded upfront in parallel:
+     * the bus view collections, the switches and configured buses, and the selected operational
+     * limits groups of the branches. Removes the serial lazy loads from the computation's critical
+     * path.
+     */
+    ALL_COLLECTIONS_NEEDED_FOR_COMPUTATION
 }
