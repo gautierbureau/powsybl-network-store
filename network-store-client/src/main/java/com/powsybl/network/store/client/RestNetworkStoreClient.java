@@ -1001,6 +1001,16 @@ public class RestNetworkStoreClient implements NetworkStoreClient {
         // nothing to do
     }
 
+    /**
+     * Sends all the pending modifications of one variant in a single request; returns false when
+     * the server does not expose the bulk update endpoint, so the caller can fall back to the per
+     * type requests.
+     */
+    public boolean bulkUpdate(UUID networkUuid, int variantNum, BulkUpdateBundle bundle) {
+        LOGGER.info("Bulk updating network {} variant {} ({} entries)", networkUuid, variantNum, bundle.getEntries().size());
+        return restClient.postIfSupported("/networks/{networkUuid}/{variantNum}/bulk-update", bundle, networkUuid, variantNum);
+    }
+
     @Override
     public List<Resource<GroundAttributes>> getVoltageLevelGrounds(UUID networkUuid, int variantNum,
             String voltageLevelId) {

@@ -34,6 +34,7 @@ import java.util.concurrent.ForkJoinPool;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.springframework.http.HttpMethod.POST;
 import static org.springframework.http.HttpMethod.PUT;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.*;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -83,6 +84,69 @@ public class BufferedNetworkStoreClientTest {
     }
 
     @Test
+    public void testBulkFlushSingleVariant() throws IOException {
+        BufferedNetworkStoreClient bufferedClient = new BufferedNetworkStoreClient(restStoreClient, ForkJoinPool.commonPool());
+        UUID networkUuid = UUID.randomUUID();
+        Resource<LoadAttributes> loadV1 = Resource.loadBuilder()
+                .id("load1")
+                .variantNum(1)
+                .attributes(LoadAttributes.builder().voltageLevelId("vl1").p0(10).build())
+                .build();
+        Resource<LoadAttributes> load2V1 = Resource.loadBuilder()
+                .id("load2")
+                .variantNum(1)
+                .attributes(LoadAttributes.builder().voltageLevelId("vl1").p0(20).build())
+                .build();
+        bufferedClient.updateLoads(networkUuid, List.of(loadV1), null);
+        bufferedClient.updateLoads(networkUuid, List.of(load2V1), AttributeFilter.SV);
+        bufferedClient.removeGenerators(networkUuid, 1, List.of("gen1"));
+
+        // everything goes in one bulk update request
+        server.expect(ExpectedCount.once(), requestTo("/networks/" + networkUuid + "/1/bulk-update"))
+                .andExpect(method(POST))
+                .andExpect(content().string(org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString("\"resourceType\":\"GENERATOR\""),
+                        org.hamcrest.Matchers.containsString("\"operation\":\"REMOVE\""),
+                        org.hamcrest.Matchers.containsString("\"resourceType\":\"LOAD\""),
+                        org.hamcrest.Matchers.containsString("\"attributeFilter\":\"SV\""))))
+                .andRespond(withSuccess());
+        bufferedClient.flush(networkUuid, 1);
+        server.verify();
+    }
+
+    @Test
+    public void testBulkFlushFallbackWhenNotSupported() throws IOException {
+        BufferedNetworkStoreClient bufferedClient = new BufferedNetworkStoreClient(restStoreClient, ForkJoinPool.commonPool());
+        UUID networkUuid = UUID.randomUUID();
+        Resource<LoadAttributes> loadV1 = Resource.loadBuilder()
+                .id("load1")
+                .variantNum(1)
+                .attributes(LoadAttributes.builder().voltageLevelId("vl1").p0(10).build())
+                .build();
+        bufferedClient.updateLoads(networkUuid, List.of(loadV1), null);
+
+        // old server: 404 on the bulk update endpoint, the flush falls back to the per type requests
+        server.expect(ExpectedCount.once(), requestTo("/networks/" + networkUuid + "/1/bulk-update"))
+                .andExpect(method(POST))
+                .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators.withResourceNotFound());
+        server.expect(ExpectedCount.once(), requestTo("/networks/" + networkUuid + "/loads"))
+                .andExpect(method(PUT))
+                .andExpect(content().string(objectMapper.writeValueAsString(List.of(loadV1))))
+                .andRespond(withSuccess());
+        bufferedClient.flush(networkUuid, 1);
+        server.verify();
+        server.reset();
+
+        // and the next flushes go straight to the per type requests
+        bufferedClient.updateLoads(networkUuid, List.of(loadV1), null);
+        server.expect(ExpectedCount.once(), requestTo("/networks/" + networkUuid + "/loads"))
+                .andExpect(method(PUT))
+                .andRespond(withSuccess());
+        bufferedClient.flush(networkUuid, 1);
+        server.verify();
+    }
+
+    @Test
     public void testFlushSingleVariant() throws IOException {
         BufferedNetworkStoreClient bufferedClient = new BufferedNetworkStoreClient(restStoreClient, ForkJoinPool.commonPool());
         UUID networkUuid = UUID.randomUUID();
@@ -99,10 +163,12 @@ public class BufferedNetworkStoreClientTest {
         bufferedClient.updateLoads(networkUuid, List.of(loadV1), null);
         bufferedClient.updateLoads(networkUuid, List.of(loadV2), null);
 
-        // flushing one variant sends only this variant's buffers
-        server.expect(ExpectedCount.once(), requestTo("/networks/" + networkUuid + "/loads"))
-                .andExpect(method(PUT))
-                .andExpect(content().string(objectMapper.writeValueAsString(List.of(loadV1))))
+        // flushing one variant sends only this variant's buffers (in one bulk update request)
+        server.expect(ExpectedCount.once(), requestTo("/networks/" + networkUuid + "/1/bulk-update"))
+                .andExpect(method(POST))
+                .andExpect(content().string(org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString("\"p0\":10.0"),
+                        org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("\"p0\":20.0")))))
                 .andRespond(withSuccess());
         bufferedClient.flush(networkUuid, 1);
         server.verify();

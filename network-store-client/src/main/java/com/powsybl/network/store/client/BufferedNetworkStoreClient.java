@@ -6,8 +6,11 @@
  */
 package com.powsybl.network.store.client;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectWriter;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.google.common.base.Stopwatch;
@@ -19,8 +22,10 @@ import com.powsybl.network.store.model.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -165,7 +170,44 @@ public class BufferedNetworkStoreClient extends AbstractForwardingNetworkStoreCl
             tieLineResourcesToFlush,
             areaResourcesToFlush);
 
+    private record TypedBufferIndex(ResourceType resourceType, NetworkCollectionIndex<? extends CollectionBuffer<? extends IdentifiableAttributes>> index) {
+    }
+
+    private final List<TypedBufferIndex> typedBuffers = List.of(
+            new TypedBufferIndex(ResourceType.NETWORK, networkResourcesToFlush),
+            new TypedBufferIndex(ResourceType.SUBSTATION, substationResourcesToFlush),
+            new TypedBufferIndex(ResourceType.VOLTAGE_LEVEL, voltageLevelResourcesToFlush),
+            new TypedBufferIndex(ResourceType.GENERATOR, generatorResourcesToFlush),
+            new TypedBufferIndex(ResourceType.BATTERY, batteryResourcesToFlush),
+            new TypedBufferIndex(ResourceType.LOAD, loadResourcesToFlush),
+            new TypedBufferIndex(ResourceType.BUSBAR_SECTION, busbarSectionResourcesToFlush),
+            new TypedBufferIndex(ResourceType.SWITCH, switchResourcesToFlush),
+            new TypedBufferIndex(ResourceType.SHUNT_COMPENSATOR, shuntCompensatorResourcesToFlush),
+            new TypedBufferIndex(ResourceType.VSC_CONVERTER_STATION, vscConverterStationResourcesToFlush),
+            new TypedBufferIndex(ResourceType.LCC_CONVERTER_STATION, lccConverterStationResourcesToFlush),
+            new TypedBufferIndex(ResourceType.STATIC_VAR_COMPENSATOR, svcResourcesToFlush),
+            new TypedBufferIndex(ResourceType.HVDC_LINE, hvdcLineResourcesToFlush),
+            new TypedBufferIndex(ResourceType.BOUNDARY_LINE, boundaryLineResourcesToFlush),
+            new TypedBufferIndex(ResourceType.GROUND, groundResourcesToFlush),
+            new TypedBufferIndex(ResourceType.TWO_WINDINGS_TRANSFORMER, twoWindingsTransformerResourcesToFlush),
+            new TypedBufferIndex(ResourceType.THREE_WINDINGS_TRANSFORMER, threeWindingsTransformerResourcesToFlush),
+            new TypedBufferIndex(ResourceType.LINE, lineResourcesToFlush),
+            new TypedBufferIndex(ResourceType.CONFIGURED_BUS, busResourcesToFlush),
+            new TypedBufferIndex(ResourceType.TIE_LINE, tieLineResourcesToFlush),
+            new TypedBufferIndex(ResourceType.AREA, areaResourcesToFlush));
+
     private final ExecutorService executorService;
+
+    private final ObjectMapper bulkObjectMapper = JsonUtil.createObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .configure(SerializationFeature.WRITE_DATE_TIMESTAMPS_AS_NANOSECONDS, false)
+            .configure(DeserializationFeature.READ_DATE_TIMESTAMPS_AS_NANOSECONDS, false);
+
+    /**
+     * Whether the server exposes the bulk update endpoint; reset to false at the first 404 so that
+     * later flushes go straight to the per type requests.
+     */
+    private volatile boolean bulkUpdateSupported = true;
 
     public BufferedNetworkStoreClient(RestNetworkStoreClient delegate, ExecutorService executorService) {
         super(delegate);
@@ -607,13 +649,135 @@ public class BufferedNetworkStoreClient extends AbstractForwardingNetworkStoreCl
         // VariantManager#allowVariantMultiThreadAccess) can flush concurrently without waiting on
         // each other's buffer monitors while the REST calls are in flight
         Stopwatch stopwatch = Stopwatch.createStarted();
-        List<Future<?>> futures = new ArrayList<>(allBuffers.size());
-        for (var buffer : allBuffers) {
-            futures.add(executorService.submit(() -> buffer.getCollection(networkUuid, variantNum).flush(networkUuid, variantNum)));
+        if (!flushVariantWithBulkUpdate(networkUuid, variantNum)) {
+            List<Future<?>> futures = new ArrayList<>(allBuffers.size());
+            for (var buffer : allBuffers) {
+                futures.add(executorService.submit(() -> buffer.getCollection(networkUuid, variantNum).flush(networkUuid, variantNum)));
+            }
+            ExecutorUtil.waitAllFutures(futures);
         }
-        ExecutorUtil.waitAllFutures(futures);
         stopwatch.stop();
         LOGGER.info("Buffers of variant {} flushed in {} ms", variantNum, stopwatch.elapsed(TimeUnit.MILLISECONDS));
+    }
+
+    /**
+     * Tries to flush all the pending modifications of the variant in a single bulk update request.
+     * Returns false when the classic per type flush must be used instead (network creation or
+     * whole variant removal pending, which are not per variant modification batches).
+     */
+    private boolean flushVariantWithBulkUpdate(UUID networkUuid, int variantNum) {
+        if (!bulkUpdateSupported) {
+            return false;
+        }
+        CollectionBuffer<NetworkAttributes> networkBuffer = networkResourcesToFlush.getCollection(networkUuid, variantNum);
+        if (!networkBuffer.getCreateResourcesIds().isEmpty() || !networkBuffer.getRemoveResourcesIds().isEmpty()) {
+            return false;
+        }
+        List<BulkUpdateEntry> entries = new ArrayList<>();
+        List<Runnable> replays = new ArrayList<>();
+        List<Runnable> restores = new ArrayList<>();
+        for (TypedBufferIndex typedBuffer : typedBuffers) {
+            drainBuffer(typedBuffer.index().getCollection(networkUuid, variantNum), typedBuffer.resourceType(),
+                    networkUuid, variantNum, entries, replays, restores);
+        }
+        if (entries.isEmpty()) {
+            return true;
+        }
+        boolean supported = false;
+        boolean completed = false;
+        try {
+            supported = delegate.bulkUpdate(networkUuid, variantNum, new BulkUpdateBundle(entries));
+            completed = true;
+        } finally {
+            if (!completed) {
+                // the request failed: give the drained modifications back to the buffers
+                restores.forEach(Runnable::run);
+            }
+        }
+        if (!supported) {
+            LOGGER.info("No bulk update endpoint on the server, falling back to the per type requests");
+            bulkUpdateSupported = false;
+            List<Future<?>> futures = new ArrayList<>(replays.size());
+            for (Runnable replay : replays) {
+                futures.add(executorService.submit(replay));
+            }
+            ExecutorUtil.waitAllFutures(futures);
+        }
+        return true;
+    }
+
+    private <T extends IdentifiableAttributes> void drainBuffer(CollectionBuffer<T> buffer, ResourceType resourceType,
+                                                                UUID networkUuid, int variantNum,
+                                                                List<BulkUpdateEntry> entries, List<Runnable> replays,
+                                                                List<Runnable> restores) {
+        CollectionBuffer.Snapshot<T> snapshot = buffer.drain();
+        if (snapshot.isEmpty()) {
+            return;
+        }
+        addEntries(entries, resourceType, snapshot);
+        replays.add(() -> buffer.replay(networkUuid, variantNum, snapshot));
+        restores.add(() -> buffer.restore(snapshot));
+    }
+
+    private <T extends IdentifiableAttributes> void addEntries(List<BulkUpdateEntry> entries, ResourceType resourceType,
+                                                               CollectionBuffer.Snapshot<T> snapshot) {
+        if (!snapshot.getRemoveResourcesIds().isEmpty()) {
+            entries.add(new BulkUpdateEntry(resourceType, BulkUpdateEntry.REMOVE, null,
+                    bulkObjectMapper.valueToTree(new ArrayList<>(snapshot.getRemoveResourcesIds()))));
+        }
+        List<Resource<T>> createResources = snapshot.getCreateResources();
+        if (!createResources.isEmpty()) {
+            // creations are serialized without a view, like the per type create requests
+            entries.add(new BulkUpdateEntry(resourceType, BulkUpdateEntry.CREATE, null,
+                    serialize(createResources, null, bulkObjectMapper.writer())));
+        }
+        List<Resource<T>> primaryUpdates = snapshot.getPrimaryUpdateResources();
+        if (!primaryUpdates.isEmpty()) {
+            entries.add(new BulkUpdateEntry(resourceType, BulkUpdateEntry.UPDATE, null,
+                    serialize(primaryUpdates, AttributeFilter.PRIMARY_AS_NULL,
+                            bulkObjectMapper.writerWithView(AttributeFilter.getViewClass(AttributeFilter.PRIMARY_AS_NULL)))));
+        }
+        for (Map.Entry<AttributeFilter, List<Resource<T>>> e : snapshot.getFilteredUpdateResources().entrySet()) {
+            AttributeFilter filter = e.getKey();
+            // subset filters (e.g. SV) are routed by the server to their dedicated update logic,
+            // superset ones (e.g. LIMITS) only change the serialization, like the per type requests
+            String routedFilter = AttributeFilter.getUrlSuffix(filter).isEmpty() ? null : filter.name();
+            Class<?> viewClass = AttributeFilter.getViewClass(filter);
+            ObjectWriter writer = viewClass != null ? bulkObjectMapper.writerWithView(viewClass) : bulkObjectMapper.writer();
+            entries.add(new BulkUpdateEntry(resourceType, BulkUpdateEntry.UPDATE, routedFilter,
+                    serialize(e.getValue(), filter, writer)));
+        }
+    }
+
+    /**
+     * Serializes the resources of one entry; for the subset filters the filter is set on each
+     * resource during the serialization, as the server relies on it to deserialize into the
+     * subset dtos (same contract as the per type filtered requests).
+     */
+    private <T extends IdentifiableAttributes> JsonNode serialize(List<Resource<T>> resources, AttributeFilter attributeFilter,
+                                                                  ObjectWriter writer) {
+        List<AttributeFilter> previousFilters = null;
+        try {
+            if (attributeFilter != AttributeFilter.PRIMARY_AS_NULL && !AttributeFilter.getUrlSuffix(attributeFilter).isEmpty()) {
+                List<AttributeFilter> finalPreviousFilters = new ArrayList<>(resources.size());
+                resources.forEach(resource -> {
+                    finalPreviousFilters.add(resource.getFilter());
+                    resource.setFilter(attributeFilter);
+                });
+                previousFilters = finalPreviousFilters;
+            }
+            return bulkObjectMapper.readTree(writer.writeValueAsBytes(resources));
+        } catch (JsonProcessingException e) {
+            throw new UncheckedIOException(e);
+        } catch (java.io.IOException e) {
+            throw new UncheckedIOException(e);
+        } finally {
+            if (previousFilters != null) {
+                for (int i = 0; i < previousFilters.size(); i++) {
+                    resources.get(i).setFilter(previousFilters.get(i));
+                }
+            }
+        }
     }
 
     private static <T extends IdentifiableAttributes> void cloneBuffer(NetworkCollectionIndex<CollectionBuffer<T>> buffer, UUID networkUuid,
