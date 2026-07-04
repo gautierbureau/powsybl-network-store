@@ -399,10 +399,15 @@ Findings:
   voltages from the terminals). Without those, OLF now skips `allowVariantMultiThreadAccess`
   and the worker-side `setWorkingVariant` entirely. Verified: a 3-thread COPY-mode SA runs
   on an **unmodified network-store main** client with results identical to single-thread
-  (0.38 s vs 1.47 s warm), while REBUILD mode still throws the stub exception. Consequences
-  for this branch: this feature remains required for REBUILD-mode SA, for SA with
-  actions/monitors/result extensions, for multi-thread sensitivity analysis (not audited on
-  the OLF side yet), and for any downstream per-thread variant workflow (parallel load
-  flows on distinct variants, the gridsuite clone-per-contingency pattern) — but the most
-  common gridsuite scenario (plain MT security analysis) gets an escape hatch that works
-  before this branch is merged.
+  (0.38 s vs 1.47 s warm), while REBUILD mode still throws the stub exception. A third OLF
+  commit then removed the last worker-side IIDM reads for **all SA use cases**: branch
+  nominal voltages and bus voltage level ids cached at build, bus-breaker mappings and
+  violation locations materialized before the copies, load action power shifts precomputed
+  on the calling thread. Verified on unmodified network-store main with state monitors,
+  result extensions and an operator strategy (load action + terminals connection action):
+  results identical to single-thread (0.45 s vs 2.3 s). Consequences for this branch: this
+  feature remains required for REBUILD-mode SA, for multi-thread sensitivity analysis (not
+  audited on the OLF side yet), and for any downstream per-thread variant workflow
+  (parallel load flows on distinct variants, the gridsuite clone-per-contingency pattern) —
+  but every security-analysis scenario gets an escape hatch that works before this branch
+  is merged.
