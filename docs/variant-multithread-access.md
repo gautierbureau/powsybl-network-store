@@ -378,7 +378,14 @@ Findings:
   - a cheap improvement for the OLF branch: materialize branch limits on the calling
     thread before taking the copies (or copy the limits in `LfNetworkCopier`), which would
     make the run phase truly IIDM-free, remove the deadlock exposure and the need for
-    worker-side `setWorkingVariant`.
+    worker-side `setWorkingVariant`. **Implemented and verified**
+    (`sa_mt_copy_limits_prewarm` branch on the OLF fork): the SA presolver materializes
+    every branch's limits caches (all limit types, both sides, disabled branches included)
+    with the same limit-reduction inputs as the violation managers, and the
+    `AbstractLfBranch` copy constructor shares the immutable caches. With that change the
+    previously deadlocking JDK-factory multi-thread SA completes (~2.8 s), results stay
+    identical to single-thread and REBUILD, and OLF's copy-mode tests pass. The
+    request-factory fix is then defense in depth for REBUILD mode and other consumers.
 - **Performance on this implementation**: warm, COPY is ~25% faster than REBUILD
   (267 ms vs 348 ms; single-thread reference 2.0 s). Cold, they are equivalent (~1.8 s
   each, both 20 REST loads): with the COLLECTION preloading strategy the first build
