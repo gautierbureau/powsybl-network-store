@@ -28,6 +28,7 @@ import org.jgrapht.graph.Pseudograph;
 
 import java.time.ZonedDateTime;
 import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -47,14 +48,29 @@ public class NetworkImpl extends AbstractIdentifiableImpl<Network, NetworkAttrib
 
     private ValidationLevel minValidationLevel = ValidationLevel.STEADY_STATE_HYPOTHESIS;
 
-    private final List<NetworkListener> listeners = new ArrayList<>();
+    // copy-on-write so that notifications coming from several threads in variant multi-thread access mode
+    // can iterate safely while listeners are added or removed
+    private final List<NetworkListener> listeners = new CopyOnWriteArrayList<>();
 
     private AbstractReportNodeContext reporterContext;
 
     public NetworkImpl(NetworkStoreClient storeClient, Resource<NetworkAttributes> resource) {
         super(new NetworkObjectIndex(storeClient), resource);
         this.reporterContext = new SimpleReportNodeContext();
+        index.setNetworkResource(resource);
         index.setNetwork(this);
+    }
+
+    @Override
+    protected Resource<NetworkAttributes> getStoredResource() {
+        // the network resource depends on the working variant, so it is stored in the index variant context
+        // (thread local when variant multi-thread access is allowed) and not in the parent field
+        return index.getNetworkResource();
+    }
+
+    @Override
+    protected void setStoredResource(Resource<NetworkAttributes> resource) {
+        index.setNetworkResource(resource);
     }
 
     public static NetworkImpl create(NetworkStoreClient storeClient, Resource<NetworkAttributes> resource) {

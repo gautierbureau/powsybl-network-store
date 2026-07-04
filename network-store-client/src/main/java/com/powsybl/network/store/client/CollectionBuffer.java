@@ -20,6 +20,10 @@ import java.util.stream.Collectors;
 /**
  * @author Geoffroy Jamgotchian <geoffroy.jamgotchian at rte-france.com>
  */
+/**
+ * Methods are synchronized on the buffer instance: there is one instance per (network, variant), so threads writing
+ * to distinct variants stay parallel while writes and flush on the same variant are serialized.
+ */
 public class CollectionBuffer<T extends IdentifiableAttributes> {
 
     private final BiConsumer<UUID, List<Resource<T>>> createFct;
@@ -66,15 +70,15 @@ public class CollectionBuffer<T extends IdentifiableAttributes> {
         this.removeFct = removeFct;
     }
 
-    void create(Resource<T> resource) {
+    synchronized void create(Resource<T> resource) {
         createResources.put(resource.getId(), resource);
     }
 
-    void update(Resource<T> resource) {
+    synchronized void update(Resource<T> resource) {
         update(resource, AttributeFilter.PRIMARY_AS_NULL);
     }
 
-    void update(Resource<T> resource, AttributeFilter attributeFilter) {
+    synchronized void update(Resource<T> resource, AttributeFilter attributeFilter) {
         // do not update the resource if a creation resource is already in the buffer
         // (so we don't need to generate an update as the resource has not yet been created
         // on server side and is still on client buffer)
@@ -89,11 +93,11 @@ public class CollectionBuffer<T extends IdentifiableAttributes> {
         }
     }
 
-    void remove(String resourceId) {
+    synchronized void remove(String resourceId) {
         remove(Collections.singletonList(resourceId));
     }
 
-    void remove(List<String> resourceIds) {
+    synchronized void remove(List<String> resourceIds) {
         for (String resourceId : resourceIds) {
             // remove directly from the creation buffer if possible, otherwise remove from the server"
             if (createResources.remove(resourceId) == null) {
@@ -105,24 +109,113 @@ public class CollectionBuffer<T extends IdentifiableAttributes> {
         }
     }
 
-    void flush(UUID networkUuid, int variantNum) {
-        if (removeFct != null && !removeResourcesIds.isEmpty()) {
-            removeFct.accept(networkUuid, variantNum, new ArrayList<>(removeResourcesIds));
+    /**
+     * The pending modifications of this buffer at one point in time, either flushed in place
+     * ({@link #flush}) or drained atomically for a bulk flush ({@link #drain}).
+     */
+    static final class Snapshot<T extends IdentifiableAttributes> {
+
+        private final Map<String, Resource<T>> createResources;
+
+        private final Map<String, ResourceAndFilter<T>> updateResources;
+
+        private final Set<String> removeResourcesIds;
+
+        private Snapshot(Map<String, Resource<T>> createResources, Map<String, ResourceAndFilter<T>> updateResources,
+                         Set<String> removeResourcesIds) {
+            this.createResources = createResources;
+            this.updateResources = updateResources;
+            this.removeResourcesIds = removeResourcesIds;
         }
-        if (!createResources.isEmpty()) {
-            createFct.accept(networkUuid, new ArrayList<>(createResources.values()));
+
+        boolean isEmpty() {
+            return createResources.isEmpty() && updateResources.isEmpty() && removeResourcesIds.isEmpty();
         }
-        if (updateFct != null && !updateResources.isEmpty()) {
+
+        List<Resource<T>> getCreateResources() {
+            return new ArrayList<>(createResources.values());
+        }
+
+        Set<String> getRemoveResourcesIds() {
+            return removeResourcesIds;
+        }
+
+        List<Resource<T>> getPrimaryUpdateResources() {
             List<Resource<T>> primaryResources = new ArrayList<>();
-            Map<AttributeFilter, List<Resource<T>>> filteredResources = new EnumMap<>(AttributeFilter.class);
             for (ResourceAndFilter<T> resource : updateResources.values()) {
                 if (resource.getAttributeFilter() == AttributeFilter.PRIMARY_AS_NULL) {
                     primaryResources.add(resource.getResource());
-                } else {
+                }
+            }
+            return primaryResources;
+        }
+
+        Map<AttributeFilter, List<Resource<T>>> getFilteredUpdateResources() {
+            Map<AttributeFilter, List<Resource<T>>> filteredResources = new EnumMap<>(AttributeFilter.class);
+            for (ResourceAndFilter<T> resource : updateResources.values()) {
+                if (resource.getAttributeFilter() != AttributeFilter.PRIMARY_AS_NULL) {
                     filteredResources.computeIfAbsent(resource.getAttributeFilter(), k -> new ArrayList<>())
                             .add(resource.getResource());
                 }
             }
+            return filteredResources;
+        }
+    }
+
+    /**
+     * Atomically snapshots and clears the pending modifications, for a bulk flush: on failure the
+     * snapshot must be given back with {@link #restore} (or sent with {@link #replay}).
+     */
+    synchronized Snapshot<T> drain() {
+        Snapshot<T> snapshot = new Snapshot<>(new LinkedHashMap<>(createResources), new LinkedHashMap<>(updateResources),
+                new HashSet<>(removeResourcesIds));
+        createResources.clear();
+        updateResources.clear();
+        removeResourcesIds.clear();
+        return snapshot;
+    }
+
+    /**
+     * Puts a drained snapshot back after a failed bulk flush; the modifications buffered since the
+     * drain win over the snapshot ones.
+     */
+    synchronized void restore(Snapshot<T> snapshot) {
+        snapshot.createResources.forEach(createResources::putIfAbsent);
+        snapshot.updateResources.forEach((id, snapshotUpdate) -> {
+            ResourceAndFilter<T> newerUpdate = updateResources.get(id);
+            if (newerUpdate == null) {
+                updateResources.put(id, snapshotUpdate);
+            } else {
+                newerUpdate.setAttributeFilter(AttributeFilter.covering(snapshotUpdate.getAttributeFilter(), newerUpdate.getAttributeFilter()));
+            }
+        });
+        removeResourcesIds.addAll(snapshot.removeResourcesIds);
+    }
+
+    /**
+     * Sends a drained snapshot with the per type requests, for servers without bulk update support.
+     */
+    void replay(UUID networkUuid, int variantNum, Snapshot<T> snapshot) {
+        doFlush(networkUuid, variantNum, snapshot);
+    }
+
+    synchronized void flush(UUID networkUuid, int variantNum) {
+        doFlush(networkUuid, variantNum, new Snapshot<>(createResources, updateResources, removeResourcesIds));
+        createResources.clear();
+        updateResources.clear();
+        removeResourcesIds.clear();
+    }
+
+    private void doFlush(UUID networkUuid, int variantNum, Snapshot<T> snapshot) {
+        if (removeFct != null && !snapshot.removeResourcesIds.isEmpty()) {
+            removeFct.accept(networkUuid, variantNum, new ArrayList<>(snapshot.removeResourcesIds));
+        }
+        if (!snapshot.createResources.isEmpty()) {
+            createFct.accept(networkUuid, snapshot.getCreateResources());
+        }
+        if (updateFct != null && !snapshot.updateResources.isEmpty()) {
+            List<Resource<T>> primaryResources = snapshot.getPrimaryUpdateResources();
+            Map<AttributeFilter, List<Resource<T>>> filteredResources = snapshot.getFilteredUpdateResources();
             // NOTE: here we use different batches for the different filters.
             // This has the effect of controlling both the serialization
             // (include/exclude fields with json views), and also to split
@@ -145,9 +238,6 @@ public class CollectionBuffer<T extends IdentifiableAttributes> {
                 updateFct.accept(networkUuid, new ArrayList<>(e.getValue()), e.getKey());
             }
         }
-        createResources.clear();
-        updateResources.clear();
-        removeResourcesIds.clear();
     }
 
     /**
@@ -158,7 +248,7 @@ public class CollectionBuffer<T extends IdentifiableAttributes> {
      * @param resourcePostProcessor a resource post processor
      * @return the buffer clone
      */
-    public CollectionBuffer<T> clone(ObjectMapper objectMapper, int newVariantNum, Consumer<Resource<T>> resourcePostProcessor) {
+    public synchronized CollectionBuffer<T> clone(ObjectMapper objectMapper, int newVariantNum, Consumer<Resource<T>> resourcePostProcessor) {
         List<Resource<T>> clonedCreateResources = Resource.cloneResourcesToVariant(createResources.values(), newVariantNum, objectMapper, resourcePostProcessor);
         List<Resource<T>> clonedUpdateResources = Resource.cloneResourcesToVariant(updateResources.values().stream().map(ResourceAndFilter::getResource).collect(Collectors.toList()), newVariantNum,
                 objectMapper, resourcePostProcessor);
@@ -176,11 +266,11 @@ public class CollectionBuffer<T extends IdentifiableAttributes> {
         return clonedBuffer;
     }
 
-    public Set<String> getCreateResourcesIds() {
-        return createResources.keySet();
+    public synchronized Set<String> getCreateResourcesIds() {
+        return new HashSet<>(createResources.keySet());
     }
 
-    public Set<String> getRemoveResourcesIds() {
-        return removeResourcesIds;
+    public synchronized Set<String> getRemoveResourcesIds() {
+        return new HashSet<>(removeResourcesIds);
     }
 }

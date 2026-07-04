@@ -113,6 +113,23 @@
         </dependency>
         <dependency>
             <groupId>com.powsybl</groupId>
+            <artifactId>powsybl-open-loadflow</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- the in-memory reference implementation, for differential tests against this implementation; the test
+             platform config pins default-impl-name to NetworkStore so that existing tests are unaffected -->
+        <dependency>
+            <groupId>com.powsybl</groupId>
+            <artifactId>powsybl-iidm-impl</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.powsybl</groupId>
+            <artifactId>powsybl-security-analysis-api</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.powsybl</groupId>
             <artifactId>powsybl-triple-store-impl-rdf4j</artifactId>
             <scope>test</scope>
         </dependency>

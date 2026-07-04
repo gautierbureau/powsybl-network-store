@@ -223,6 +223,19 @@ public class RestClientImpl implements RestClient {
     }
 
     @Override
+    public <T> boolean postIfSupported(String url, T body, Object... uriVariables) {
+        HttpEntity<T> requestEntity = new HttpEntity<>(body);
+        ResponseEntity<Void> response = restTemplate.exchange(url, HttpMethod.POST, requestEntity, Void.class, uriVariables);
+        if (response.getStatusCode() == HttpStatus.NOT_FOUND) {
+            return false;
+        }
+        if (response.getStatusCode() != HttpStatus.OK) {
+            throw createHttpException(url, "post", response.getStatusCode());
+        }
+        return true;
+    }
+
+    @Override
     public void delete(String url, Object... uriVariables) {
         ResponseEntity<Void> response = restTemplate.exchange(url, HttpMethod.DELETE, null, Void.class, uriVariables);
         if (response.getStatusCode() != HttpStatus.OK) {

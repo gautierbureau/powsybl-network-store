@@ -9,6 +9,7 @@ package com.powsybl.network.store.iidm.impl;
 import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 
@@ -17,7 +18,8 @@ import java.util.function.Supplier;
  */
 public class NetworkCollectionIndex<C> {
 
-    private final Map<Pair<UUID, Integer>, C> collections = new LinkedHashMap<>();
+    // concurrent so that threads working on distinct variants can resolve their collection in parallel
+    private final Map<Pair<UUID, Integer>, C> collections = new ConcurrentHashMap<>();
 
     private final Supplier<C> factory;
 
@@ -44,13 +46,11 @@ public class NetworkCollectionIndex<C> {
     }
 
     public void applyToCollection(UUID networkUuid, BiConsumer<Integer, C> fct) {
-        for (Map.Entry<Pair<UUID, Integer>, C> e : collections.entrySet()) {
-            Pair<UUID, Integer> p = e.getKey();
-            if (p.getLeft().equals(networkUuid)) {
-                int variantNum = p.getRight();
-                C collection = e.getValue();
-                fct.accept(variantNum, collection);
-            }
-        }
+        // sorted by variant num to keep a deterministic iteration order, as the concurrent map does not preserve
+        // the insertion order the previous implementation had
+        collections.entrySet().stream()
+                .filter(e -> e.getKey().getLeft().equals(networkUuid))
+                .sorted(Comparator.comparingInt(e -> e.getKey().getRight()))
+                .forEach(e -> fct.accept(e.getKey().getRight(), e.getValue()));
     }
 }

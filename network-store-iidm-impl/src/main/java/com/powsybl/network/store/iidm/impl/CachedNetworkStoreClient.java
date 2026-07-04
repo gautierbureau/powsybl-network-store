@@ -12,10 +12,12 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.powsybl.commons.json.JsonUtil;
 import com.powsybl.network.store.model.*;
-import org.apache.commons.lang3.mutable.MutableInt;
 import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -27,7 +29,7 @@ public class CachedNetworkStoreClient extends AbstractForwardingNetworkStoreClie
 
     private static final int MAX_GET_IDENTIFIABLE_CALL_COUNT = 10;
 
-    private final Map<UUID, List<VariantInfos>> variantsInfosByNetworkUuid = new HashMap<>();
+    private final Map<UUID, List<VariantInfos>> variantsInfosByNetworkUuid = new ConcurrentHashMap<>();
 
     private final NetworkCollectionIndex<CollectionCache<NetworkAttributes>> networksCache =
             new NetworkCollectionIndex<>(() -> new CollectionCache<>(
@@ -201,9 +203,9 @@ public class CachedNetworkStoreClient extends AbstractForwardingNetworkStoreClie
 
     private final Map<ResourceType, NetworkCollectionIndex<? extends CollectionCache<? extends IdentifiableAttributes>>> networkContainersCaches = new EnumMap<>(ResourceType.class);
 
-    private final Map<Pair<UUID, Integer>, MutableInt> identifiableCallCountByNetworkVariant = new HashMap<>();
+    private final Map<Pair<UUID, Integer>, AtomicInteger> identifiableCallCountByNetworkVariant = new ConcurrentHashMap<>();
 
-    private final Map<Pair<UUID, Integer>, Set<String>> identifiablesIdsByNetworkVariant = new HashMap<>();
+    private final Map<Pair<UUID, Integer>, Set<String>> identifiablesIdsByNetworkVariant = new ConcurrentHashMap<>();
 
     public CachedNetworkStoreClient(NetworkStoreClient delegate) {
         super(delegate);
@@ -245,9 +247,42 @@ public class CachedNetworkStoreClient extends AbstractForwardingNetworkStoreClie
             // initialize network sub-collection cache to set to fully loaded
             networkContainersCaches.values().forEach(cache -> cache.getCollection(networkUuid, networkResource.getVariantNum()).init());
 
-            variantsInfosByNetworkUuid.computeIfAbsent(networkUuid, k -> new ArrayList<>())
-                    .add(new VariantInfos(networkResource.getAttributes().getVariantId(), networkResource.getVariantNum()));
+            addVariantInfos(networkUuid, new VariantInfos(networkResource.getAttributes().getVariantId(), networkResource.getVariantNum()));
         }
+    }
+
+    /**
+     * Variant infos mutations go through {@link java.util.Map#compute} so that they serialize with
+     * the forced refresh of {@link #getVariantsInfos(UUID, boolean)}: a plain add on the cached
+     * list could otherwise be lost when a concurrent forced refresh (from the optimistic clone
+     * retry of another thread) swaps in a server snapshot taken before this variant was committed.
+     */
+    private void addVariantInfos(UUID networkUuid, VariantInfos variantInfos) {
+        variantsInfosByNetworkUuid.compute(networkUuid, (uuid, variantsInfos) -> {
+            List<VariantInfos> result = variantsInfos != null ? variantsInfos : new CopyOnWriteArrayList<>();
+            result.add(variantInfos);
+            return result;
+        });
+    }
+
+    private void reserveVariantInfos(UUID networkUuid, VariantInfos variantInfos) {
+        variantsInfosByNetworkUuid.compute(networkUuid, (uuid, variantsInfos) -> {
+            List<VariantInfos> result = variantsInfos != null ? variantsInfos : new CopyOnWriteArrayList<>();
+            if (result.stream().anyMatch(infos -> infos.getNum() == variantInfos.getNum())) {
+                throw new DuplicateVariantNumException("Variant num " + variantInfos.getNum() + " already exists");
+            }
+            result.add(variantInfos);
+            return result;
+        });
+    }
+
+    private void removeVariantInfos(UUID networkUuid, int variantNum) {
+        variantsInfosByNetworkUuid.compute(networkUuid, (uuid, variantsInfos) -> {
+            if (variantsInfos != null) {
+                variantsInfos.removeIf(infos -> infos.getNum() == variantNum);
+            }
+            return variantsInfos;
+        });
     }
 
     @Override
@@ -264,9 +299,20 @@ public class CachedNetworkStoreClient extends AbstractForwardingNetworkStoreClie
     @Override
     public List<VariantInfos> getVariantsInfos(UUID networkUuid, boolean disableCache) {
         if (disableCache) {
-            return variantsInfosByNetworkUuid.compute(networkUuid, (uuid, oldValue) -> delegate.getVariantsInfos(uuid, true));
+            // refresh from the delegate but keep the locally known variants it does not report:
+            // a replacement would lose variants cloned by this client and not yet visible in the
+            // delegate snapshot, and would wipe the whole list in pure in memory usage where the
+            // delegate reports no variant at all
+            return variantsInfosByNetworkUuid.compute(networkUuid, (uuid, oldValue) -> {
+                List<VariantInfos> refreshed = new CopyOnWriteArrayList<>(delegate.getVariantsInfos(uuid, true));
+                if (oldValue != null) {
+                    Set<Integer> refreshedNums = refreshed.stream().map(VariantInfos::getNum).collect(Collectors.toSet());
+                    oldValue.stream().filter(infos -> !refreshedNums.contains(infos.getNum())).forEach(refreshed::add);
+                }
+                return refreshed;
+            });
         }
-        return variantsInfosByNetworkUuid.computeIfAbsent(networkUuid, delegate::getVariantsInfos);
+        return variantsInfosByNetworkUuid.computeIfAbsent(networkUuid, uuid -> new CopyOnWriteArrayList<>(delegate.getVariantsInfos(uuid)));
     }
 
     @Override
@@ -287,10 +333,7 @@ public class CachedNetworkStoreClient extends AbstractForwardingNetworkStoreClie
         delegate.deleteNetwork(networkUuid, variantNum);
         networksCache.removeCollection(networkUuid, variantNum);
         networkContainersCaches.values().forEach(cache -> cache.removeCollection(networkUuid, variantNum));
-        List<VariantInfos> variantsInfos = variantsInfosByNetworkUuid.get(networkUuid);
-        if (variantsInfos != null) {
-            variantsInfos.removeIf(infos -> infos.getNum() == variantNum);
-        }
+        removeVariantInfos(networkUuid, variantNum);
     }
 
     @Override
@@ -319,7 +362,20 @@ public class CachedNetworkStoreClient extends AbstractForwardingNetworkStoreClie
 
     @Override
     public void cloneNetwork(UUID networkUuid, int sourceVariantNum, int targetVariantNum, String targetVariantId) {
-        delegate.cloneNetwork(networkUuid, sourceVariantNum, targetVariantNum, targetVariantId);
+        // atomically reserve the target variant num in the cached variants infos, failing like the
+        // server would on a duplicate so the optimistic retry of the variant manager picks another
+        // num: this is the only arbiter for concurrent clones when the delegate has no uniqueness
+        // constraint (in memory usage), and it protects the local caches in all cases
+        reserveVariantInfos(networkUuid, new VariantInfos(targetVariantId, targetVariantNum));
+        boolean cloned = false;
+        try {
+            delegate.cloneNetwork(networkUuid, sourceVariantNum, targetVariantNum, targetVariantId);
+            cloned = true;
+        } finally {
+            if (!cloned) {
+                removeVariantInfos(networkUuid, targetVariantNum);
+            }
+        }
         var objectMapper = JsonUtil.createObjectMapper()
             .registerModule(new JavaTimeModule())
             .configure(SerializationFeature.WRITE_DATE_TIMESTAMPS_AS_NANOSECONDS, false)
@@ -355,8 +411,6 @@ public class CachedNetworkStoreClient extends AbstractForwardingNetworkStoreClie
                     }
                 });
 
-        variantsInfosByNetworkUuid.computeIfAbsent(networkUuid, k -> new ArrayList<>())
-                .add(new VariantInfos(targetVariantId, targetVariantNum));
     }
 
     @Override
@@ -1254,8 +1308,9 @@ public class CachedNetworkStoreClient extends AbstractForwardingNetworkStoreClie
         // getting it from the server
         var p = Pair.of(networkUuid, variantNum);
         Set<String> identifiablesIds = identifiablesIdsByNetworkVariant.get(p);
-        if (identifiablesIds == null && identifiableCallCountByNetworkVariant.getOrDefault(p, new MutableInt()).getValue() > MAX_GET_IDENTIFIABLE_CALL_COUNT) {
-            identifiablesIds = new HashSet<>(delegate.getIdentifiablesIds(networkUuid, variantNum));
+        if (identifiablesIds == null && identifiableCallCountByNetworkVariant.getOrDefault(p, new AtomicInteger()).get() > MAX_GET_IDENTIFIABLE_CALL_COUNT) {
+            identifiablesIds = ConcurrentHashMap.newKeySet();
+            identifiablesIds.addAll(delegate.getIdentifiablesIds(networkUuid, variantNum));
             identifiablesIdsByNetworkVariant.put(p, identifiablesIds);
         }
 
@@ -1271,8 +1326,8 @@ public class CachedNetworkStoreClient extends AbstractForwardingNetworkStoreClie
             collection.addOrReplaceResource(r);
         });
 
-        identifiableCallCountByNetworkVariant.computeIfAbsent(p, k -> new MutableInt())
-                .increment();
+        identifiableCallCountByNetworkVariant.computeIfAbsent(p, k -> new AtomicInteger())
+                .incrementAndGet();
 
         return resource;
     }

@@ -46,5 +46,11 @@ public interface RestClient {
 
     void post(String url, Object... uriVariables);
 
+    /**
+     * Posts a body, returning false when the server does not expose the endpoint (404) instead of
+     * throwing, so the caller can fall back to another protocol. Any other error status throws.
+     */
+    <T> boolean postIfSupported(String url, T body, Object... uriVariables);
+
     <T> void deleteAll(String url, T ids, Object... uriVariables);
 }

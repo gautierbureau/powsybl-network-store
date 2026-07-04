@@ -181,10 +181,9 @@ public class RestNetworkStoreClientTest {
                 .andExpect(method(GET))
                 .andRespond(withSuccess(breakersJson, MediaType.APPLICATION_JSON));
 
-        server.expect(requestTo("/networks/" + networkUuid))
-                .andExpect(method(GET))
-                .andRespond(withSuccess(objectMapper.writeValueAsString(List.of(new VariantInfos(VariantManagerConstants.INITIAL_VARIANT_ID, Resource.INITIAL_VARIANT_NUM))),
-                        MediaType.APPLICATION_JSON));
+        // note: no variant infos fetch here anymore: the working variant id used by the update
+        // notifications is now read from the thread's variant context instead of the variants
+        // infos list
 
         // line
         Resource<LineAttributes> line = Resource.lineBuilder()

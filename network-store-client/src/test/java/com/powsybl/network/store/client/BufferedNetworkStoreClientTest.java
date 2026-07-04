@@ -34,6 +34,7 @@ import java.util.concurrent.ForkJoinPool;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.springframework.http.HttpMethod.POST;
 import static org.springframework.http.HttpMethod.PUT;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.*;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -80,6 +81,115 @@ public class BufferedNetworkStoreClientTest {
     @Before
     public void setUp() {
         restStoreClient = new RestNetworkStoreClient(restClient);
+    }
+
+    private BufferedNetworkStoreClient bulkFlushEnabledClient() {
+        // the bulk flush is opt-in: enable it before the client construction reads the property
+        System.setProperty(BufferedNetworkStoreClient.BULK_FLUSH_PROPERTY_NAME, "true");
+        try {
+            return new BufferedNetworkStoreClient(restStoreClient, ForkJoinPool.commonPool());
+        } finally {
+            System.clearProperty(BufferedNetworkStoreClient.BULK_FLUSH_PROPERTY_NAME);
+        }
+    }
+
+    @Test
+    public void testBulkFlushSingleVariant() throws IOException {
+        BufferedNetworkStoreClient bufferedClient = bulkFlushEnabledClient();
+        UUID networkUuid = UUID.randomUUID();
+        Resource<LoadAttributes> loadV1 = Resource.loadBuilder()
+                .id("load1")
+                .variantNum(1)
+                .attributes(LoadAttributes.builder().voltageLevelId("vl1").p0(10).build())
+                .build();
+        Resource<LoadAttributes> load2V1 = Resource.loadBuilder()
+                .id("load2")
+                .variantNum(1)
+                .attributes(LoadAttributes.builder().voltageLevelId("vl1").p0(20).build())
+                .build();
+        bufferedClient.updateLoads(networkUuid, List.of(loadV1), null);
+        bufferedClient.updateLoads(networkUuid, List.of(load2V1), AttributeFilter.SV);
+        bufferedClient.removeGenerators(networkUuid, 1, List.of("gen1"));
+
+        // everything goes in one bulk update request
+        server.expect(ExpectedCount.once(), requestTo("/networks/" + networkUuid + "/1/bulk-update"))
+                .andExpect(method(POST))
+                .andExpect(content().string(org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString("\"resourceType\":\"GENERATOR\""),
+                        org.hamcrest.Matchers.containsString("\"operation\":\"REMOVE\""),
+                        org.hamcrest.Matchers.containsString("\"resourceType\":\"LOAD\""),
+                        org.hamcrest.Matchers.containsString("\"attributeFilter\":\"SV\""))))
+                .andRespond(withSuccess());
+        bufferedClient.flush(networkUuid, 1);
+        server.verify();
+    }
+
+    @Test
+    public void testBulkFlushFallbackWhenNotSupported() throws IOException {
+        BufferedNetworkStoreClient bufferedClient = bulkFlushEnabledClient();
+        UUID networkUuid = UUID.randomUUID();
+        Resource<LoadAttributes> loadV1 = Resource.loadBuilder()
+                .id("load1")
+                .variantNum(1)
+                .attributes(LoadAttributes.builder().voltageLevelId("vl1").p0(10).build())
+                .build();
+        bufferedClient.updateLoads(networkUuid, List.of(loadV1), null);
+
+        // old server: 404 on the bulk update endpoint, the flush falls back to the per type requests
+        server.expect(ExpectedCount.once(), requestTo("/networks/" + networkUuid + "/1/bulk-update"))
+                .andExpect(method(POST))
+                .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators.withResourceNotFound());
+        server.expect(ExpectedCount.once(), requestTo("/networks/" + networkUuid + "/loads"))
+                .andExpect(method(PUT))
+                .andExpect(content().string(objectMapper.writeValueAsString(List.of(loadV1))))
+                .andRespond(withSuccess());
+        bufferedClient.flush(networkUuid, 1);
+        server.verify();
+        server.reset();
+
+        // and the next flushes go straight to the per type requests
+        bufferedClient.updateLoads(networkUuid, List.of(loadV1), null);
+        server.expect(ExpectedCount.once(), requestTo("/networks/" + networkUuid + "/loads"))
+                .andExpect(method(PUT))
+                .andRespond(withSuccess());
+        bufferedClient.flush(networkUuid, 1);
+        server.verify();
+    }
+
+    @Test
+    public void testFlushSingleVariant() throws IOException {
+        BufferedNetworkStoreClient bufferedClient = new BufferedNetworkStoreClient(restStoreClient, ForkJoinPool.commonPool());
+        UUID networkUuid = UUID.randomUUID();
+        Resource<LoadAttributes> loadV1 = Resource.loadBuilder()
+                .id("load1")
+                .variantNum(1)
+                .attributes(LoadAttributes.builder().voltageLevelId("vl1").p0(10).build())
+                .build();
+        Resource<LoadAttributes> loadV2 = Resource.loadBuilder()
+                .id("load1")
+                .variantNum(2)
+                .attributes(LoadAttributes.builder().voltageLevelId("vl1").p0(20).build())
+                .build();
+        bufferedClient.updateLoads(networkUuid, List.of(loadV1), null);
+        bufferedClient.updateLoads(networkUuid, List.of(loadV2), null);
+
+        // flushing one variant sends only this variant's buffers (bulk flush is opt-in, so the
+        // per type requests are used here)
+        server.expect(ExpectedCount.once(), requestTo("/networks/" + networkUuid + "/loads"))
+                .andExpect(method(PUT))
+                .andExpect(content().string(objectMapper.writeValueAsString(List.of(loadV1))))
+                .andRespond(withSuccess());
+        bufferedClient.flush(networkUuid, 1);
+        server.verify();
+        server.reset();
+
+        // the other variant's buffer is untouched and goes with the full flush
+        server.expect(ExpectedCount.once(), requestTo("/networks/" + networkUuid + "/loads"))
+                .andExpect(method(PUT))
+                .andExpect(content().string(objectMapper.writeValueAsString(List.of(loadV2))))
+                .andRespond(withSuccess());
+        bufferedClient.flush(networkUuid);
+        server.verify();
     }
 
     @Test

@@ -388,4 +388,15 @@ public interface NetworkStoreClient {
     List<String> getIdentifiablesIds(UUID networkUuid, int variantNum);
 
     void flush(UUID networkUuid);
+
+    /**
+     * Flush only the pending modifications of one variant of the network. Contrary to
+     * {@link #flush(UUID)}, this is safe to call concurrently from threads working on distinct
+     * variants (see {@code VariantManager#allowVariantMultiThreadAccess}): flushes of distinct
+     * variants do not contend with each other. Implementations that do not buffer per variant
+     * fall back to a full flush.
+     */
+    default void flush(UUID networkUuid, int variantNum) {
+        flush(networkUuid);
+    }
 }
