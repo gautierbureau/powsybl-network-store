@@ -210,7 +210,7 @@ public final class CalculatedBus implements BaseBus {
             nodes.stream()
                 .mapToDouble(n -> getVoltageLevel().getNodeBreakerView().getFictitiousP0(n))
                 .reduce(0.0, Double::sum) :
-            getAllTerminalsStream().map(t -> t.getBusBreakerView().getBus()).distinct()
+            getAllTerminalsStream().map(t -> t.getBusBreakerView().getConnectableBus()).distinct()
                 .map(Bus::getFictitiousP0)
                 .reduce(0.0, Double::sum);
     }
@@ -224,7 +224,14 @@ public final class CalculatedBus implements BaseBus {
             nodes.forEach(n -> getVoltageLevel().getNodeBreakerView().setFictitiousP0(n, 0.0));
             getVoltageLevel().getNodeBreakerView().setFictitiousP0(nodes.getFirst(), p0);
         } else {
-            getAllTerminalsStream().map(t -> t.getBusBreakerView().getBus()).distinct().forEach(b -> b.setFictitiousP0(p0));
+            // same convention as the node breaker branch: reset all buses and carry the whole
+            // value on the first one, so that the calculated bus value (sum) is the value set
+            List<Bus> buses = getAllTerminalsStream().map(t -> t.getBusBreakerView().getConnectableBus()).distinct().toList();
+            if (buses.isEmpty()) {
+                throw new PowsyblException("Bus " + id + " should contain at least one configured bus");
+            }
+            buses.forEach(b -> b.setFictitiousP0(0.0));
+            buses.get(0).setFictitiousP0(p0);
         }
         return this;
     }
@@ -235,7 +242,7 @@ public final class CalculatedBus implements BaseBus {
                 nodes.stream()
                     .mapToDouble(n -> getVoltageLevel().getNodeBreakerView().getFictitiousQ0(n))
                     .reduce(0.0, Double::sum) :
-                getAllTerminalsStream().map(t -> t.getBusBreakerView().getBus()).distinct()
+                getAllTerminalsStream().map(t -> t.getBusBreakerView().getConnectableBus()).distinct()
                     .map(Bus::getFictitiousQ0)
                     .reduce(0.0, Double::sum);
     }
@@ -249,7 +256,12 @@ public final class CalculatedBus implements BaseBus {
             nodes.forEach(n -> getVoltageLevel().getNodeBreakerView().setFictitiousQ0(n, 0.0));
             getVoltageLevel().getNodeBreakerView().setFictitiousQ0(nodes.getFirst(), q0);
         } else {
-            getAllTerminalsStream().map(t -> t.getBusBreakerView().getBus()).distinct().forEach(b -> b.setFictitiousQ0(q0));
+            List<Bus> buses = getAllTerminalsStream().map(t -> t.getBusBreakerView().getConnectableBus()).distinct().toList();
+            if (buses.isEmpty()) {
+                throw new PowsyblException("Bus " + id + " should contain at least one configured bus");
+            }
+            buses.forEach(b -> b.setFictitiousQ0(0.0));
+            buses.get(0).setFictitiousQ0(q0);
         }
         return this;
     }

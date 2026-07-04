@@ -38,6 +38,23 @@ public class BusBreakerCalculatedBusTest {
     }
 
     @Test
+    public void testFictitiousP0Q0WithDisconnectedTerminal() {
+        Network network = CreateNetworksUtil.createBusBreakerNetworkWithLine();
+        // disconnecting the line leaves a terminal with no bus in the bus breaker view: the
+        // calculated bus fictitious P0/Q0 used to throw a NullPointerException on it
+        network.getLine("L1").getTerminal1().disconnect();
+
+        Bus calculatedBus = network.getVoltageLevel("VL1").getBusView().getBusStream().findFirst().orElseThrow();
+        assertEquals(0.0, calculatedBus.getFictitiousP0(), 0);
+        assertEquals(0.0, calculatedBus.getFictitiousQ0(), 0);
+
+        calculatedBus.setFictitiousP0(10.0);
+        calculatedBus.setFictitiousQ0(5.0);
+        assertEquals(10.0, calculatedBus.getFictitiousP0(), 0);
+        assertEquals(5.0, calculatedBus.getFictitiousQ0(), 0);
+    }
+
+    @Test
     public void testCalculatedBuses() {
         Network network = CreateNetworksUtil.createBusBreakerNetworkWithLine();
         VoltageLevel vl1 = network.getVoltageLevel("VL1");
