@@ -195,33 +195,40 @@ public class CollectionCache<T extends IdentifiableAttributes> {
     private void loadAll(UUID networkUuid, int variantNum) {
         if (!fullyLoaded) {
             // if collection has not yet been fully loaded we load it from the server
-            List<Resource<T>> resourcesToAdd = allLoaderFunction.apply(networkUuid, variantNum);
+            initWithResources(allLoaderFunction.apply(networkUuid, variantNum));
+        }
+    }
 
-            // we update the full cache and set it as fully loaded
-            // notice: even if it adds some checks and reduces performance by a tiny bit, we avoid to overwrite already
-            // loaded resource (single or container) because they are referenced in the resources or resourcesByContainerId map,
-            // but also directly in any identifiable with the iidm api.
-            resourcesToAdd.forEach(resource -> resources.putIfAbsent(resource.getId(), resource));
-            fullyLoaded = true;
+    /**
+     * Fill the cache with the full collection, already fetched from the server (single collection
+     * load, or all the collections of the variant in one server round trip), and mark it as fully
+     * loaded.
+     */
+    public void initWithResources(List<Resource<T>> resourcesToAdd) {
+        // we update the full cache and set it as fully loaded
+        // notice: even if it adds some checks and reduces performance by a tiny bit, we avoid to overwrite already
+        // loaded resource (single or container) because they are referenced in the resources or resourcesByContainerId map,
+        // but also directly in any identifiable with the iidm api.
+        resourcesToAdd.forEach(resource -> resources.putIfAbsent(resource.getId(), resource));
+        fullyLoaded = true;
 
-            // we update by container cache
-            for (Resource<T> resource : resourcesToAdd) {
-                IdentifiableAttributes attributes = resource.getAttributes();
-                if (attributes instanceof Contained) {
-                    Set<String> containerIds = ((Contained) attributes).getContainerIds();
-                    containerIds.forEach(containerId -> {
-                        // we add container resources and update container fully loaded status
-                        // notice: even if it adds some checks and reduces performance by a tiny bit, we avoid to overwrite already
-                        // loaded resource (single or container) because they are referenced in the resources or resourcesByContainerId map,
-                        // but also directly in any identifiable with the iidm api.
-                        getResourcesByContainerId(containerId).putIfAbsent(resource.getId(), resource);
-                        containerFullyLoaded.add(containerId);
-                    });
-                }
-
-                // discard remove status of the resources
-                removedResources.remove(resource.getId());
+        // we update by container cache
+        for (Resource<T> resource : resourcesToAdd) {
+            IdentifiableAttributes attributes = resource.getAttributes();
+            if (attributes instanceof Contained) {
+                Set<String> containerIds = ((Contained) attributes).getContainerIds();
+                containerIds.forEach(containerId -> {
+                    // we add container resources and update container fully loaded status
+                    // notice: even if it adds some checks and reduces performance by a tiny bit, we avoid to overwrite already
+                    // loaded resource (single or container) because they are referenced in the resources or resourcesByContainerId map,
+                    // but also directly in any identifiable with the iidm api.
+                    getResourcesByContainerId(containerId).putIfAbsent(resource.getId(), resource);
+                    containerFullyLoaded.add(containerId);
+                });
             }
+
+            // discard remove status of the resources
+            removedResources.remove(resource.getId());
         }
     }
 
@@ -672,6 +679,17 @@ public class CollectionCache<T extends IdentifiableAttributes> {
             loadOperationalLimitsGroupsToCache(operationalLimitsGroupAttributesMap);
             fullyLoadedSelectedOperationalLimitsGroup = true;
         }
+    }
+
+    /**
+     * Fill the cache with the selected operational limits group attributes of the resource type,
+     * already fetched from the server (all the collections of the variant in one server round
+     * trip), and mark them as fully loaded. The collection resources must have been put in the
+     * cache first: the limits are injected into them.
+     */
+    public void initWithSelectedOperationalLimitsGroupAttributes(Map<String, Map<Integer, Map<String, OperationalLimitsGroupAttributes>>> operationalLimitsGroupAttributesMap) {
+        loadOperationalLimitsGroupsToCache(operationalLimitsGroupAttributesMap);
+        fullyLoadedSelectedOperationalLimitsGroup = true;
     }
 
     private void loadOperationalLimitsGroupsToCache(Map<String, Map<Integer, Map<String, OperationalLimitsGroupAttributes>>> operationalLimitsGroupAttributesMap) {

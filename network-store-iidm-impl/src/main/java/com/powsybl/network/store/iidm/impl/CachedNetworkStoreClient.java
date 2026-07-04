@@ -1183,6 +1183,26 @@ public class CachedNetworkStoreClient extends AbstractForwardingNetworkStoreClie
     }
 
     @Override
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public Set<ResourceType> loadAllCollections(UUID networkUuid, int variantNum) {
+        AllCollectionsBundle bundle = delegate.getAllCollections(networkUuid, variantNum);
+        if (bundle == null || bundle.getResources() == null) {
+            // server does not expose the collections endpoint: the caller falls back to per
+            // collection loading
+            return null;
+        }
+        // seed the resource caches first: the selected operational limits groups are injected into
+        // the cached branch resources
+        bundle.getResources().forEach((resourceType, resources) ->
+            ((CollectionCache) getCache(resourceType).getCollection(networkUuid, variantNum)).initWithResources((List) resources));
+        if (bundle.getSelectedOperationalLimitsGroups() != null) {
+            bundle.getSelectedOperationalLimitsGroups().forEach((resourceType, limitsGroups) ->
+                getCache(resourceType).getCollection(networkUuid, variantNum).initWithSelectedOperationalLimitsGroupAttributes(limitsGroups));
+        }
+        return bundle.getResources().keySet();
+    }
+
+    @Override
     public void removeOperationalLimitsGroupAttributes(UUID networkUuid, int variantNum, ResourceType resourceType, Map<String, Map<Integer, Set<String>>> operationalLimitsGroupsToDelete) {
         getCache(resourceType).getCollection(networkUuid, variantNum).removeOperationalLimitsGroupAttributes(operationalLimitsGroupsToDelete);
         delegate.removeOperationalLimitsGroupAttributes(networkUuid, variantNum, resourceType, operationalLimitsGroupsToDelete);

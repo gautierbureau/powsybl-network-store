@@ -40,6 +40,12 @@ public interface RestClient {
 
     <E> E get(String url, ParameterizedTypeReference<E> responseType, Object... uriVariables);
 
+    /**
+     * Same as {@link #get(String, ParameterizedTypeReference, Object...)} but returns an empty
+     * optional when the server answers 404 (endpoint or resource not there), instead of throwing.
+     */
+    <E> Optional<E> getIfExists(String url, ParameterizedTypeReference<E> responseType, Object... uriVariables);
+
     void put(String url, Object... uriVariables);
 
     void delete(String url, Object... uriVariables);

@@ -30,6 +30,25 @@ public interface NetworkStoreClient {
 
     Optional<Resource<NetworkAttributes>> getNetwork(UUID networkUuid, int variantNum);
 
+    /**
+     * Fetches all the identifiable collections of a variant (plus the selected operational limits
+     * groups of the branches) in a single server round trip, or returns null when the server does
+     * not expose the collections endpoint.
+     */
+    default AllCollectionsBundle getAllCollections(UUID networkUuid, int variantNum) {
+        return null;
+    }
+
+    /**
+     * Loads all the identifiable collections of a variant into the caches in a single server round
+     * trip and returns the resource types that were loaded. Returns null when the single round
+     * trip is not available (server too old, no cache layer): the caller then falls back to per
+     * collection loading.
+     */
+    default Set<ResourceType> loadAllCollections(UUID networkUuid, int variantNum) {
+        return null;
+    }
+
     void deleteNetwork(UUID networkUuid);
 
     void deleteNetwork(UUID networkUuid, int variantNum);
