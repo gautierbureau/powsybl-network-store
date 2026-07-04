@@ -83,6 +83,41 @@ public class BufferedNetworkStoreClientTest {
     }
 
     @Test
+    public void testFlushSingleVariant() throws IOException {
+        BufferedNetworkStoreClient bufferedClient = new BufferedNetworkStoreClient(restStoreClient, ForkJoinPool.commonPool());
+        UUID networkUuid = UUID.randomUUID();
+        Resource<LoadAttributes> loadV1 = Resource.loadBuilder()
+                .id("load1")
+                .variantNum(1)
+                .attributes(LoadAttributes.builder().voltageLevelId("vl1").p0(10).build())
+                .build();
+        Resource<LoadAttributes> loadV2 = Resource.loadBuilder()
+                .id("load1")
+                .variantNum(2)
+                .attributes(LoadAttributes.builder().voltageLevelId("vl1").p0(20).build())
+                .build();
+        bufferedClient.updateLoads(networkUuid, List.of(loadV1), null);
+        bufferedClient.updateLoads(networkUuid, List.of(loadV2), null);
+
+        // flushing one variant sends only this variant's buffers
+        server.expect(ExpectedCount.once(), requestTo("/networks/" + networkUuid + "/loads"))
+                .andExpect(method(PUT))
+                .andExpect(content().string(objectMapper.writeValueAsString(List.of(loadV1))))
+                .andRespond(withSuccess());
+        bufferedClient.flush(networkUuid, 1);
+        server.verify();
+        server.reset();
+
+        // the other variant's buffer is untouched and goes with the full flush
+        server.expect(ExpectedCount.once(), requestTo("/networks/" + networkUuid + "/loads"))
+                .andExpect(method(PUT))
+                .andExpect(content().string(objectMapper.writeValueAsString(List.of(loadV2))))
+                .andRespond(withSuccess());
+        bufferedClient.flush(networkUuid);
+        server.verify();
+    }
+
+    @Test
     public void testClone() throws IOException {
         BufferedNetworkStoreClient bufferedClient = new BufferedNetworkStoreClient(restStoreClient, ForkJoinPool.commonPool());
         UUID networkUuid = UUID.randomUUID();

@@ -258,6 +258,22 @@ public class NetworkStoreService implements AutoCloseable {
         networkImpl.getIndex().getStoreClient().flush(networkImpl.getUuid());
     }
 
+    /**
+     * Send the buffered modifications of the calling thread's working variant to the server.
+     * <p>
+     * Contrary to {@link #flush(Network)}, this is safe to call concurrently from threads working
+     * on distinct variants (see {@code VariantManager#allowVariantMultiThreadAccess}): flushes of
+     * distinct variants do not contend with each other.
+     */
+    public void flushWorkingVariant(Network network) {
+        NetworkImpl networkImpl = getNetworkImpl(network);
+        int variantNum = networkImpl.getIndex().getWorkingVariantNum();
+        if (variantNum == -1) {
+            throw new PowsyblException("Variant index not set");
+        }
+        networkImpl.getIndex().getStoreClient().flush(networkImpl.getUuid(), variantNum);
+    }
+
     @PostConstruct
     public void start() {
         LOGGER.info(Version.getTableString());

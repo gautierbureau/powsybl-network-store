@@ -601,6 +601,21 @@ public class BufferedNetworkStoreClient extends AbstractForwardingNetworkStoreCl
         LOGGER.info("All buffers flushed in {} ms", stopwatch.elapsed(TimeUnit.MILLISECONDS));
     }
 
+    @Override
+    public void flush(UUID networkUuid, int variantNum) {
+        // flush only the buffers of this variant: threads working on distinct variants (see
+        // VariantManager#allowVariantMultiThreadAccess) can flush concurrently without waiting on
+        // each other's buffer monitors while the REST calls are in flight
+        Stopwatch stopwatch = Stopwatch.createStarted();
+        List<Future<?>> futures = new ArrayList<>(allBuffers.size());
+        for (var buffer : allBuffers) {
+            futures.add(executorService.submit(() -> buffer.getCollection(networkUuid, variantNum).flush(networkUuid, variantNum)));
+        }
+        ExecutorUtil.waitAllFutures(futures);
+        stopwatch.stop();
+        LOGGER.info("Buffers of variant {} flushed in {} ms", variantNum, stopwatch.elapsed(TimeUnit.MILLISECONDS));
+    }
+
     private static <T extends IdentifiableAttributes> void cloneBuffer(NetworkCollectionIndex<CollectionBuffer<T>> buffer, UUID networkUuid,
                                                                        int sourceVariantNum, int targetVariantNum, ObjectMapper objectMapper,
                                                                        Consumer<Resource<T>> resourcePostProcessor) {
