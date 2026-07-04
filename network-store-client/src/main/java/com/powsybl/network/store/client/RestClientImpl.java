@@ -18,9 +18,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.*;
+import org.springframework.http.client.ClientHttpRequestFactory;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.http.converter.json.MappingJacksonValue;
 import org.springframework.stereotype.Component;
+import org.springframework.util.ClassUtils;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.DefaultUriBuilderFactory;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -62,8 +66,23 @@ public class RestClientImpl implements RestClient {
 
     public static RestTemplateBuilder createRestTemplateBuilder(String baseUri) {
         return new RestTemplateBuilder(restTemplate1 -> restTemplate1.setMessageConverters(List.of(createMapping())))
+            .requestFactory(RestClientImpl::createRequestFactory)
             .uriTemplateHandler(new DefaultUriBuilderFactory(UriComponentsBuilder.fromUriString(baseUri)
                         .path(NetworkStoreApi.VERSION)));
+    }
+
+    /**
+     * The request factory Spring Boot selects by default when nothing else is on the classpath is backed by the JDK
+     * HttpClient, which relies on the ForkJoinPool common pool: a caller running computations on that pool (like
+     * open-loadflow multi-thread security analysis) and blocking on REST calls can starve it, leaving the responses
+     * undeliverable and the caller deadlocked. Prefer Apache HttpClient when available, otherwise use the simple
+     * blocking factory, which does not depend on any shared pool.
+     */
+    private static ClientHttpRequestFactory createRequestFactory() {
+        if (ClassUtils.isPresent("org.apache.hc.client5.http.classic.HttpClient", RestClientImpl.class.getClassLoader())) {
+            return new HttpComponentsClientHttpRequestFactory();
+        }
+        return new SimpleClientHttpRequestFactory();
     }
 
     private static ObjectMapper createObjectMapper() {
