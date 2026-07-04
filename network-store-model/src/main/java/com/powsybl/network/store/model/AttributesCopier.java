@@ -9,6 +9,7 @@ package com.powsybl.network.store.model;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.util.TokenBuffer;
 import com.powsybl.commons.PowsyblException;
+import com.powsybl.iidm.network.extensions.Coordinate;
 import org.mapstruct.Context;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -18,6 +19,11 @@ import org.mapstruct.factory.Mappers;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.BiFunction;
 
 /**
  * Structural (generated) deep copy of the resource attributes, used to clone resources to a new
@@ -25,11 +31,13 @@ import java.io.UncheckedIOException;
  * time by MapStruct from the getters and setters, so a new field is picked up automatically at
  * the next build.
  *
- * <p>The only part of the attributes graph that is not copied structurally is the extension
- * attributes: their concrete classes are resolved at runtime through {@link ExtensionLoaders}
- * (plugins can register new ones), so an open set of subtypes that cannot be enumerated at
- * compile time. They fall back to a Jackson {@link TokenBuffer} round trip, exactly the copy the
- * previous implementation applied to the whole resource.
+ * <p>Extension attributes classes form an open set at runtime (plugins can register new ones
+ * through {@link ExtensionLoaders}), so they cannot all be enumerated at compile time: the
+ * extension attributes classes defined in this module are copied structurally through the
+ * {@link #EXTENSION_COPIERS} registry, looked up by exact concrete class; any other class (a
+ * third-party plugin extension, {@link RawExtensionAttributes}, or a subclass of a model class)
+ * falls back to a Jackson {@link TokenBuffer} round trip, exactly the copy the previous
+ * implementation applied to the whole resource.
  *
  * @author Geoffroy Jamgotchian <geoffroy.jamgotchian at rte-france.com>
  */
@@ -41,6 +49,43 @@ import java.io.UncheckedIOException;
 public interface AttributesCopier {
 
     AttributesCopier INSTANCE = Mappers.getMapper(AttributesCopier.class);
+
+    /**
+     * Structural copiers for the extension attributes classes defined in this module, keyed by
+     * exact concrete class. The lookup is deliberately by exact runtime class and not by
+     * assignability: a plugin subclass of a model class must fall back to the Jackson copy, a
+     * structural copy of the base class would silently drop the subclass fields.
+     */
+    Map<Class<? extends ExtensionAttributes>, BiFunction<ExtensionAttributes, ObjectMapper, ExtensionAttributes>> EXTENSION_COPIERS = Map.ofEntries(
+        extensionCopier(ActivePowerControlAttributes.class, INSTANCE::copy),
+        extensionCopier(BranchObservabilityAttributes.class, INSTANCE::copy),
+        extensionCopier(CgmesMetadataModelsAttributes.class, INSTANCE::copy),
+        extensionCopier(CgmesTapChangersAttributes.class, INSTANCE::copy),
+        extensionCopier(DiscreteMeasurementsAttributes.class, INSTANCE::copy),
+        extensionCopier(DynamicModelInfoAttributes.class, INSTANCE::copy),
+        extensionCopier(GeneratorFortescueAttributes.class, INSTANCE::copy),
+        extensionCopier(GeneratorStartupAttributes.class, INSTANCE::copy),
+        extensionCopier(InjectionObservabilityAttributes.class, INSTANCE::copy),
+        extensionCopier(LegFortescueAttributes.class, INSTANCE::copy),
+        extensionCopier(LineFortescueAttributes.class, INSTANCE::copy),
+        extensionCopier(LinePositionAttributes.class, INSTANCE::copy),
+        extensionCopier(LoadAsymmetricalAttributes.class, INSTANCE::copy),
+        extensionCopier(MeasurementsAttributes.class, INSTANCE::copy),
+        extensionCopier(OperatingStatusAttributes.class, INSTANCE::copy),
+        extensionCopier(ReferencePrioritiesAttributes.class, INSTANCE::copy),
+        extensionCopier(SecondaryVoltageControlAttributes.class, INSTANCE::copy),
+        extensionCopier(SubstationPositionAttributes.class, INSTANCE::copy),
+        extensionCopier(ThreeWindingsTransformerFortescueAttributes.class, INSTANCE::copy),
+        extensionCopier(ThreeWindingsTransformerToBeEstimatedAttributes.class, INSTANCE::copy),
+        extensionCopier(TwoWindingsTransformerFortescueAttributes.class, INSTANCE::copy),
+        extensionCopier(TwoWindingsTransformerToBeEstimatedAttributes.class, INSTANCE::copy),
+        extensionCopier(VoltageRegulationAttributes.class, INSTANCE::copy)
+    );
+
+    private static <T extends ExtensionAttributes> Map.Entry<Class<? extends ExtensionAttributes>, BiFunction<ExtensionAttributes, ObjectMapper, ExtensionAttributes>> extensionCopier(
+            Class<T> type, BiFunction<T, ObjectMapper, T> copier) {
+        return Map.entry(type, (attributes, objectMapper) -> copier.apply(type.cast(attributes), objectMapper));
+    }
 
     /**
      * Deep copies the attributes of a resource; the returned attributes have no
@@ -237,13 +282,19 @@ public interface AttributesCopier {
     ShuntCompensatorNonLinearModelAttributes copy(ShuntCompensatorNonLinearModelAttributes attributes, @Context ObjectMapper objectMapper);
 
     /**
-     * Extension attributes classes form an open set (plugins register them through
-     * {@link ExtensionLoaders}), so they cannot be copied structurally: fall back to the Jackson
-     * copy, going through a token buffer to skip the text encoding and parsing.
+     * Extension attributes dispatch: the classes defined in this module are copied structurally
+     * through the {@link #EXTENSION_COPIERS} registry (exact class lookup); any other class
+     * (a plugin extension registered through {@link ExtensionLoaders}, {@link RawExtensionAttributes},
+     * or a subclass of a model class) falls back to the Jackson copy, going through a token
+     * buffer to skip the text encoding and parsing.
      */
     default ExtensionAttributes copy(ExtensionAttributes attributes, @Context ObjectMapper objectMapper) {
         if (attributes == null) {
             return null;
+        }
+        BiFunction<ExtensionAttributes, ObjectMapper, ExtensionAttributes> copier = EXTENSION_COPIERS.get(attributes.getClass());
+        if (copier != null) {
+            return copier.apply(attributes, objectMapper);
         }
         try (TokenBuffer buffer = new TokenBuffer(objectMapper, false)) {
             objectMapper.writeValue(buffer, attributes);
@@ -252,4 +303,186 @@ public interface AttributesCopier {
             throw new UncheckedIOException(e);
         }
     }
+
+    // the extension attributes classes defined in this module; their copy methods must not route
+    // back through the generic ExtensionAttributes dispatch for their own type (each field is
+    // declared with its concrete type, so mapstruct binds the specific methods below)
+
+    ActivePowerControlAttributes copy(ActivePowerControlAttributes attributes, @Context ObjectMapper objectMapper);
+
+    BranchObservabilityAttributes copy(BranchObservabilityAttributes attributes, @Context ObjectMapper objectMapper);
+
+    // hand written: no setters (jackson populates the models list through the getter), and the
+    // nested CgmesMetadataModelAttributes has no setters either
+    default CgmesMetadataModelsAttributes copy(CgmesMetadataModelsAttributes attributes, @Context ObjectMapper objectMapper) {
+        if (attributes == null) {
+            return null;
+        }
+        CgmesMetadataModelsAttributes copy = new CgmesMetadataModelsAttributes();
+        if (attributes.getModels() != null) {
+            for (CgmesMetadataModelAttributes model : attributes.getModels()) {
+                copy.getModels().add(copy(model, objectMapper));
+            }
+        }
+        return copy;
+    }
+
+    // hand written: no setters, all state passed to the constructor
+    default CgmesMetadataModelAttributes copy(CgmesMetadataModelAttributes attributes, @Context ObjectMapper objectMapper) {
+        if (attributes == null) {
+            return null;
+        }
+        return new CgmesMetadataModelAttributes(attributes.getSubset(), attributes.getId(), attributes.getDescription(),
+            attributes.getVersion(), attributes.getModelingAuthoritySet(), copyStringList(attributes.getProfiles()),
+            copyStringList(attributes.getDependentOn()), copyStringList(attributes.getSupersedes()));
+    }
+
+    private static List<String> copyStringList(List<String> list) {
+        return list == null ? null : new ArrayList<>(list);
+    }
+
+    // hand written: no setters (jackson populates the cgmesTapChangers list through the getter)
+    default CgmesTapChangersAttributes copy(CgmesTapChangersAttributes attributes, @Context ObjectMapper objectMapper) {
+        if (attributes == null) {
+            return null;
+        }
+        CgmesTapChangersAttributes copy = new CgmesTapChangersAttributes();
+        if (attributes.getCgmesTapChangers() != null) {
+            for (CgmesTapChangerAttributes tapChanger : attributes.getCgmesTapChangers()) {
+                copy.getCgmesTapChangers().add(copy(tapChanger, objectMapper));
+            }
+        }
+        return copy;
+    }
+
+    CgmesTapChangerAttributes copy(CgmesTapChangerAttributes attributes, @Context ObjectMapper objectMapper);
+
+    // hand written: a null list source must keep the field initializer of the no-args constructor
+    // (an empty list), like the jackson copy: the field is omitted from the json when null, so the
+    // setter is never called on deserialization
+    default DiscreteMeasurementsAttributes copy(DiscreteMeasurementsAttributes attributes, @Context ObjectMapper objectMapper) {
+        if (attributes == null) {
+            return null;
+        }
+        DiscreteMeasurementsAttributes copy = new DiscreteMeasurementsAttributes();
+        if (attributes.getDiscreteMeasurementAttributes() != null) {
+            List<DiscreteMeasurementAttributes> discreteMeasurements = new ArrayList<>(attributes.getDiscreteMeasurementAttributes().size());
+            for (DiscreteMeasurementAttributes discreteMeasurement : attributes.getDiscreteMeasurementAttributes()) {
+                discreteMeasurements.add(copy(discreteMeasurement, objectMapper));
+            }
+            copy.setDiscreteMeasurementAttributes(discreteMeasurements);
+        }
+        return copy;
+    }
+
+    // hand written: the value field is declared Object (a json scalar: string, boolean or
+    // integer), which mapstruct cannot deep clone; scalars are immutable so sharing the
+    // reference is a correct deep copy
+    default DiscreteMeasurementAttributes copy(DiscreteMeasurementAttributes attributes, @Context ObjectMapper objectMapper) {
+        if (attributes == null) {
+            return null;
+        }
+        DiscreteMeasurementAttributes copy = new DiscreteMeasurementAttributes();
+        copy.setId(attributes.getId());
+        copy.setType(attributes.getType());
+        copy.setTapChanger(attributes.getTapChanger());
+        copy.setValueType(attributes.getValueType());
+        if (attributes.getProperties() != null) {
+            copy.setProperties(new HashMap<>(attributes.getProperties()));
+        }
+        copy.setValue(attributes.getValue());
+        copy.setValid(attributes.isValid());
+        return copy;
+    }
+
+    DynamicModelInfoAttributes copy(DynamicModelInfoAttributes attributes, @Context ObjectMapper objectMapper);
+
+    GeneratorFortescueAttributes copy(GeneratorFortescueAttributes attributes, @Context ObjectMapper objectMapper);
+
+    GeneratorStartupAttributes copy(GeneratorStartupAttributes attributes, @Context ObjectMapper objectMapper);
+
+    InjectionObservabilityAttributes copy(InjectionObservabilityAttributes attributes, @Context ObjectMapper objectMapper);
+
+    LegFortescueAttributes copy(LegFortescueAttributes attributes, @Context ObjectMapper objectMapper);
+
+    LineFortescueAttributes copy(LineFortescueAttributes attributes, @Context ObjectMapper objectMapper);
+
+    // hand written: Coordinate is an immutable powsybl-core class without setters
+    default LinePositionAttributes copy(LinePositionAttributes attributes, @Context ObjectMapper objectMapper) {
+        if (attributes == null) {
+            return null;
+        }
+        List<Coordinate> coordinates = null;
+        if (attributes.getCoordinates() != null) {
+            coordinates = new ArrayList<>(attributes.getCoordinates().size());
+            for (Coordinate coordinate : attributes.getCoordinates()) {
+                coordinates.add(copyCoordinate(coordinate));
+            }
+        }
+        return new LinePositionAttributes(coordinates);
+    }
+
+    private static Coordinate copyCoordinate(Coordinate coordinate) {
+        return coordinate == null ? null : new Coordinate(coordinate.getLatitude(), coordinate.getLongitude());
+    }
+
+    LoadAsymmetricalAttributes copy(LoadAsymmetricalAttributes attributes, @Context ObjectMapper objectMapper);
+
+    // hand written: a null list source must keep the field initializer of the no-args constructor
+    // (an empty list), like the jackson copy: the field is omitted from the json when null, so the
+    // setter is never called on deserialization
+    default MeasurementsAttributes copy(MeasurementsAttributes attributes, @Context ObjectMapper objectMapper) {
+        if (attributes == null) {
+            return null;
+        }
+        MeasurementsAttributes copy = new MeasurementsAttributes();
+        if (attributes.getMeasurementAttributes() != null) {
+            List<MeasurementAttributes> measurements = new ArrayList<>(attributes.getMeasurementAttributes().size());
+            for (MeasurementAttributes measurement : attributes.getMeasurementAttributes()) {
+                measurements.add(copy(measurement, objectMapper));
+            }
+            copy.setMeasurementAttributes(measurements);
+        }
+        return copy;
+    }
+
+    MeasurementAttributes copy(MeasurementAttributes attributes, @Context ObjectMapper objectMapper);
+
+    OperatingStatusAttributes copy(OperatingStatusAttributes attributes, @Context ObjectMapper objectMapper);
+
+    // hand written: no setters (jackson populates the referencePriorities list through the getter)
+    default ReferencePrioritiesAttributes copy(ReferencePrioritiesAttributes attributes, @Context ObjectMapper objectMapper) {
+        if (attributes == null) {
+            return null;
+        }
+        ReferencePrioritiesAttributes copy = new ReferencePrioritiesAttributes();
+        if (attributes.getReferencePriorities() != null) {
+            for (ReferencePriorityAttributes referencePriority : attributes.getReferencePriorities()) {
+                copy.getReferencePriorities().add(copy(referencePriority, objectMapper));
+            }
+        }
+        return copy;
+    }
+
+    ReferencePriorityAttributes copy(ReferencePriorityAttributes attributes, @Context ObjectMapper objectMapper);
+
+    SecondaryVoltageControlAttributes copy(SecondaryVoltageControlAttributes attributes, @Context ObjectMapper objectMapper);
+
+    // hand written: Coordinate is an immutable powsybl-core class without setters
+    default SubstationPositionAttributes copy(SubstationPositionAttributes attributes, @Context ObjectMapper objectMapper) {
+        if (attributes == null) {
+            return null;
+        }
+        return new SubstationPositionAttributes(copyCoordinate(attributes.getCoordinate()));
+    }
+
+    ThreeWindingsTransformerFortescueAttributes copy(ThreeWindingsTransformerFortescueAttributes attributes, @Context ObjectMapper objectMapper);
+
+    ThreeWindingsTransformerToBeEstimatedAttributes copy(ThreeWindingsTransformerToBeEstimatedAttributes attributes, @Context ObjectMapper objectMapper);
+
+    TwoWindingsTransformerFortescueAttributes copy(TwoWindingsTransformerFortescueAttributes attributes, @Context ObjectMapper objectMapper);
+
+    TwoWindingsTransformerToBeEstimatedAttributes copy(TwoWindingsTransformerToBeEstimatedAttributes attributes, @Context ObjectMapper objectMapper);
+
+    VoltageRegulationAttributes copy(VoltageRegulationAttributes attributes, @Context ObjectMapper objectMapper);
 }
