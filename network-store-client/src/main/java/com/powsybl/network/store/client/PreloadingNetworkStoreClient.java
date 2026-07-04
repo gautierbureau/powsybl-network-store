@@ -117,17 +117,23 @@ public class PreloadingNetworkStoreClient extends AbstractForwardingNetworkStore
     }
 
     private void loadAllCollections(UUID networkUuid, int variantNum, Set<ResourceType> resourceTypesToLoad,
-                                    boolean withSelectedOperationalLimitsGroups, Set<ResourceType> resourceTypes) {
-        // directly load all collections, in parallel; when requested, each branchy type's selected
-        // operational limits groups are loaded in the same task, right after its collection (they are
-        // injected into the cached branch resources, so the collection must be there first)
+                                    boolean withComputationExtras, Set<ResourceType> resourceTypes) {
+        // directly load all collections, in parallel; for the computation strategy, each type's extras
+        // are loaded in the same task, right after its collection (they are injected into the cached
+        // resources, so the collection must be there first): the selected operational limits groups for
+        // the branchy types and the extension attributes for all types. Prefetching the extensions marks
+        // each collection cache as fully loaded, so any extension access during the computation is a
+        // cache hit (even a negative one) instead of a lazy REST call
         Stopwatch stopwatch = Stopwatch.createStarted();
         List<Future<?>> futures = new ArrayList<>(resourceTypesToLoad.size());
         for (ResourceType resourceType : resourceTypesToLoad) {
             futures.add(executorService.submit(() -> {
                 loadToCache(resourceType, networkUuid, variantNum);
-                if (withSelectedOperationalLimitsGroups && RESOURCE_TYPES_WITH_SELECTED_LIMITS.contains(resourceType)) {
-                    delegate.loadAllSelectedOperationalLimitsGroupAttributesByResourceType(networkUuid, variantNum, resourceType);
+                if (withComputationExtras) {
+                    if (RESOURCE_TYPES_WITH_SELECTED_LIMITS.contains(resourceType)) {
+                        delegate.loadAllSelectedOperationalLimitsGroupAttributesByResourceType(networkUuid, variantNum, resourceType);
+                    }
+                    delegate.loadAllExtensionsAttributesByResourceType(networkUuid, variantNum, resourceType);
                 }
             }));
         }
@@ -135,7 +141,7 @@ public class PreloadingNetworkStoreClient extends AbstractForwardingNetworkStore
         resourceTypes.addAll(resourceTypesToLoad);
         stopwatch.stop();
         LOGGER.info("{} collections{} loaded in {} ms", resourceTypesToLoad.size(),
-            withSelectedOperationalLimitsGroups ? " (with selected operational limits groups)" : "",
+            withComputationExtras ? " (with selected operational limits groups and extension attributes)" : "",
             stopwatch.elapsed(TimeUnit.MILLISECONDS));
     }
 
