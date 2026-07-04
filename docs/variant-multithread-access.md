@@ -342,3 +342,46 @@ Still to do downstream (cannot be done from this repository):
   parity on reads.
 - [ ] Known pre-existing quirk kept as-is: `setWorkingVariantNum` does not reload the
   tie-line cache (`tieLineCache` missing from the `setResourcesToObjects` list).
+
+## Evaluation of the OLF "copy mode" work in progress (`lfnetwork_copy` + `sa_mt_copy`)
+
+Open-loadflow has a work-in-progress alternative for multi-thread security analysis:
+instead of each worker thread rebuilding its own `LfNetwork` from the IIDM network
+(`networkPerThreadMode=REBUILD`, the legacy behavior), the networks are built **once** on
+the calling thread and each partition gets a lock-free in-memory deep copy
+(`LfNetworkCopier`, `networkPerThreadMode=COPY`, the new default on that branch). The two
+branches are stacked (`sa_mt_copy` contains `lfnetwork_copy`), so `sa_mt_copy` is the
+combined feature. Evaluated against this implementation on the local
+network-store-server + postgres stack (CGMES small grid, 173 line contingencies, 3 SA
+threads; OLF branch is on powsybl-core 7.3.0-RC2, so the client stack was locally rebuilt
+against that core version — a mechanical port, not committed).
+
+Findings:
+
+- **COPY mode works on network-store networks**: no fallback to rebuild
+  (`canCopy` accepts the built networks, presolve succeeds), and the results are
+  **identical** to single-thread and to REBUILD mode (normalized statuses + violations).
+- **It still requires `allowVariantMultiThreadAccess`** (this feature): the helper turns
+  the flag on unconditionally, and partition workers still call `setWorkingVariant` and
+  still read the IIDM network during simulation (see next point). On `main` it fails
+  exactly like REBUILD mode does.
+- **It is not IIDM-free during the run phase**: OLF's `AbstractLfBranch.createLimits` is
+  lazy — the first limit-violation check per partition reads
+  `getAllSelectedOperationalLimitsGroups` from the IIDM branch, which on this
+  implementation is a REST load (`.../branch/types/LINE/operationalLimitsGroup/selected`)
+  from a worker thread. Two consequences:
+  - the ForkJoinPool/JDK-HttpClient starvation deadlock documented above is **not** fixed
+    by COPY mode: with the JDK request factory both modes hang at 3 threads on 4 cores
+    (REBUILD during the per-thread builds, COPY at the first lazy limits load; thread dump
+    shows the worker parked in `RestTemplate.doExecute` while holding the collection-cache
+    monitor). The request-factory fix stays necessary regardless of mode.
+  - a cheap improvement for the OLF branch: materialize branch limits on the calling
+    thread before taking the copies (or copy the limits in `LfNetworkCopier`), which would
+    make the run phase truly IIDM-free, remove the deadlock exposure and the need for
+    worker-side `setWorkingVariant`.
+- **Performance on this implementation**: warm, COPY is ~25% faster than REBUILD
+  (267 ms vs 348 ms; single-thread reference 2.0 s). Cold, they are equivalent (~1.8 s
+  each, both 20 REST loads): with the COLLECTION preloading strategy the first build
+  fills the shared client cache, so REBUILD's redundant per-thread builds cost CPU, not
+  REST. COPY's gain here is the saved rebuild CPU and the removal of the build lock; the
+  gain grows with network size and thread count.
