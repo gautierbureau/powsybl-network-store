@@ -405,9 +405,16 @@ Findings:
   violation locations materialized before the copies, load action power shifts precomputed
   on the calling thread. Verified on unmodified network-store main with state monitors,
   result extensions and an operator strategy (load action + terminals connection action):
-  results identical to single-thread (0.45 s vs 2.3 s). Consequences for this branch: this
-  feature remains required for REBUILD-mode SA, for multi-thread sensitivity analysis (not
-  audited on the OLF side yet), and for any downstream per-thread variant workflow
-  (parallel load flows on distinct variants, the gridsuite clone-per-contingency pattern) —
-  but every security-analysis scenario gets an escape hatch that works before this branch
-  is merged.
+  results identical to single-thread (0.45 s vs 2.3 s). A fourth OLF commit extended the
+  contract to the **multi-thread AC sensitivity analysis**: its last worker-side IIDM
+  reader was per-partition factor resolution (`readAndCheckFactors` — branch/injection
+  lookups, injection-to-bus bus-view navigation, GLSK expansion); resolution is partition
+  independent, so it now runs once on the calling thread and the resolved factors are
+  rebound onto each copy by element id only, letting the sensitivity COPY path also skip
+  `allowVariantMultiThreadAccess`. Verified on unmodified network-store main: 40 factors ×
+  173 contingencies (6960 values), 3 threads, values identical to single-thread, no
+  deadlock even with the JDK http factory (0.35 s vs 1.26 s). Consequences for this
+  branch: this feature remains required for REBUILD-mode SA and sensitivity, and for any
+  downstream per-thread variant workflow (parallel load flows on distinct variants, the
+  gridsuite clone-per-contingency pattern) — but every OLF COPY-mode scenario (security
+  analysis and sensitivity) now works before this branch is merged.
