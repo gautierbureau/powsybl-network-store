@@ -413,8 +413,19 @@ Findings:
   rebound onto each copy by element id only, letting the sensitivity COPY path also skip
   `allowVariantMultiThreadAccess`. Verified on unmodified network-store main: 40 factors ×
   173 contingencies (6960 values), 3 threads, values identical to single-thread, no
-  deadlock even with the JDK http factory (0.35 s vs 1.26 s). Consequences for this
-  branch: this feature remains required for REBUILD-mode SA and sensitivity, and for any
-  downstream per-thread variant workflow (parallel load flows on distinct variants, the
-  gridsuite clone-per-contingency pattern) — but every OLF COPY-mode scenario (security
-  analysis and sensitivity) now works before this branch is merged.
+  deadlock even with the JDK http factory (0.35 s vs 1.26 s). A fifth OLF commit hardened
+  the contract from "no dangerous reads" to **no worker-side IIDM reads at all**: every
+  attribute the run phase can touch through the Lf model's IIDM refs is now cached at
+  build time (element ids and original ids, generator/battery/VSC/SVC min/max P, target Q,
+  reactive limits, per-load P0/Q0/fictitious data, tie-line half characteristics used by
+  the area interchange outer loop, 3WT leg sides), and a `RefThreadGuard` armed by the OLF
+  multi-thread tests proves it: with the guard on, any `Ref` dereference from a partition
+  worker throws, and the full-featured COPY-mode SA and sensitivity tests pass. The
+  correctness of build-time caching is anchored by OLF's own `NetworkCache` semantics: any
+  IIDM change it does not explicitly reconcile into the Lf model invalidates the cached
+  LfNetwork, so a cached attribute can never go stale. Consequences for this branch: this
+  feature remains required for REBUILD-mode SA and sensitivity, and for any downstream
+  per-thread variant workflow (parallel load flows on distinct variants, the gridsuite
+  clone-per-contingency pattern) — but every OLF COPY-mode scenario (security analysis and
+  sensitivity) now works before this branch is merged, with no dependence on the IIDM
+  implementation's thread-safety at all during the run phase.
