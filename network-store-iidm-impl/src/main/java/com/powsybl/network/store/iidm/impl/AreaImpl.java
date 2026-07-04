@@ -61,7 +61,7 @@ public class AreaImpl extends AbstractIdentifiableImpl<Area, AreaAttributes> imp
         Set<String> oldVoltageLevelIds = getResource().getAttributes().getVoltageLevelIds();
         AtomicBoolean isAdded = new AtomicBoolean(false);
         updateResource(r -> isAdded.set(r.getAttributes().getVoltageLevelIds().add(voltageLevel.getId())),
-            "voltageLevelIds", null, oldVoltageLevelIds, this::getVoltageLevels);
+            "voltageLevelIds", oldVoltageLevelIds, this::getVoltageLevels);
         if (isAdded.get()) {
             voltageLevel.addArea(this);
         }
@@ -72,7 +72,7 @@ public class AreaImpl extends AbstractIdentifiableImpl<Area, AreaAttributes> imp
     public Area removeVoltageLevel(VoltageLevel voltageLevel) {
         Set<String> oldVoltageLevelIds = getResource().getAttributes().getVoltageLevelIds();
         updateResource(r -> r.getAttributes().getVoltageLevelIds().remove(voltageLevel.getId()),
-            "voltageLevelIds", null, oldVoltageLevelIds, this::getVoltageLevels);
+            "voltageLevelIds", oldVoltageLevelIds, this::getVoltageLevels);
         if (Iterables.contains(voltageLevel.getAreas(), this)) {
             voltageLevel.removeArea(this);
         }
@@ -100,7 +100,7 @@ public class AreaImpl extends AbstractIdentifiableImpl<Area, AreaAttributes> imp
         });
         List<AreaBoundaryAttributes> oldAreaBoundaries = getResource().getAttributes().getAreaBoundaries();
         updateResource(r -> r.getAttributes().getAreaBoundaries().add(areaBoundaryBuilder.build()),
-            AREA_BOUNDARIES, null, oldAreaBoundaries, this::getAreaBoundaries);
+            AREA_BOUNDARIES, oldAreaBoundaries, this::getAreaBoundaries);
     }
 
     void checkBoundaryNetwork(Network network, String boundaryTypeAndId) {
@@ -116,7 +116,7 @@ public class AreaImpl extends AbstractIdentifiableImpl<Area, AreaAttributes> imp
         List<AreaBoundaryAttributes> oldAreaBoundaries = getResource().getAttributes().getAreaBoundaries();
         updateResource(r -> r.getAttributes().getAreaBoundaries().removeIf(b ->
                 Objects.equals(b.getTerminal(), terminalRefAttributes)),
-            AREA_BOUNDARIES, null, oldAreaBoundaries, this::getAreaBoundaries);
+            AREA_BOUNDARIES, oldAreaBoundaries, this::getAreaBoundaries);
         return this;
     }
 
@@ -126,7 +126,7 @@ public class AreaImpl extends AbstractIdentifiableImpl<Area, AreaAttributes> imp
         List<AreaBoundaryAttributes> oldAreaBoundaries = getResource().getAttributes().getAreaBoundaries();
         updateResource(r -> r.getAttributes().getAreaBoundaries().removeIf(b ->
                 Objects.equals(b.getBoundaryBoundaryLineId(), boundary.getBoundaryLine().getId())),
-            AREA_BOUNDARIES, null, oldAreaBoundaries, this::getAreaBoundaries);
+            AREA_BOUNDARIES, oldAreaBoundaries, this::getAreaBoundaries);
         return this;
     }
 

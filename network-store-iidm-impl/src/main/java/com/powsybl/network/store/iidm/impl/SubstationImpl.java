@@ -102,7 +102,7 @@ public class SubstationImpl extends AbstractIdentifiableImpl<Substation, Substat
         }
         Set<String> oldGeographicalTags = new HashSet<>(getResource().getAttributes().getGeographicalTags());
         updateResource(r -> r.getAttributes().getGeographicalTags().add(tag),
-                "geographicalTags", null, oldGeographicalTags, this::getGeographicalTags);
+                "geographicalTags", oldGeographicalTags, this::getGeographicalTags);
         return this;
     }
 

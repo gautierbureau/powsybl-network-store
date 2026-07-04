@@ -47,8 +47,7 @@ public class VscConverterStationImpl extends AbstractRegulatingInjection<VscConv
         boolean oldValue = this.isRegulating();
         if (voltageRegulatorOn != oldValue) {
             this.setRegulating(voltageRegulatorOn);
-            String variantId = index.getNetwork().getVariantManager().getWorkingVariantId();
-            index.notifyUpdate(this, "voltageRegulatorOn", variantId, oldValue, voltageRegulatorOn);
+            index.notifyUpdate(this, "voltageRegulatorOn", oldValue, voltageRegulatorOn);
         }
         return this;
     }

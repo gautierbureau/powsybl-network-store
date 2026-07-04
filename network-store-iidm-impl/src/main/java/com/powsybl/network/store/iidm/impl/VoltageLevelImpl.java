@@ -724,7 +724,7 @@ public class VoltageLevelImpl extends AbstractIdentifiableImpl<VoltageLevel, Vol
             throw new PowsyblException("VoltageLevel " + getId() + " is already in Area of the same type=" + previousArea.get().getAreaType() + " with id=" + previousArea.get().getId());
         }
         updateResource(r -> r.getAttributes().getAreaIds().add(area.getId()),
-            "areaIds", null, oldAreaIds, this::getAreas);
+            "areaIds", oldAreaIds, this::getAreas);
         area.addVoltageLevel(this);
     }
 
@@ -733,7 +733,7 @@ public class VoltageLevelImpl extends AbstractIdentifiableImpl<VoltageLevel, Vol
         Objects.requireNonNull(area);
         Set<String> oldAreaIds = getResource().getAttributes().getAreaIds();
         updateResource(r -> r.getAttributes().getAreaIds().remove(area.getId()),
-            "areas", null, oldAreaIds, this::getAreas);
+            "areas", oldAreaIds, this::getAreas);
         area.removeVoltageLevel(this);
     }
 
