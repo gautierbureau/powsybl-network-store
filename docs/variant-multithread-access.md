@@ -306,6 +306,28 @@ dependency):
   `baseVoltageMapping` and `cgmesMetadataModels` extensions that the in-memory network
   carries.
 
+### End-to-end validation against a real server
+
+Also validated against a locally built network-store-server backed by PostgreSQL 16
+(CGMES conformity small grid, all times on a 4-core container):
+
+- the **multi-thread security analysis works over REST** end to end: ~1.3 s on first run
+  (client cache filling from the server), ~0.6 s warm — the per-thread variant contexts
+  read through the shared, synchronized client cache with a real HTTP/SQL backend;
+- `cloneVariant` end to end costs ~68 ms with a warm client cache versus ~18 ms with a
+  cold one: the client-side JSON deep copy of the cached collections accounts for about
+  three quarters of the total clone cost, more than the server-side SQL copy itself
+  (profiling showed ~94% of the client-side clone CPU is Jackson serialize/deserialize
+  in `Resource.cloneResourcesToVariant`, called by both the cached and buffered layers);
+- **operational caveat found**: with the default Spring request factory (JDK
+  `HttpClient`), open-loadflow multi-thread security analysis deadlocks. The SA
+  partitions run on the `ForkJoinPool` common pool and block on REST calls whose
+  response completions also need common pool threads; with parallelism 3 (4 cores) all
+  workers park and the responses are never delivered. Using a blocking request factory
+  (e.g. `SimpleClientHttpRequestFactory`, or Apache HttpClient as deployed setups do)
+  avoids it. Worth documenting for any consumer running multi-thread computations
+  against the REST client.
+
 Still to do downstream (cannot be done from this repository):
 
 - Inventory gridsuite services for `allowVariantMultiThreadAccess`, in-memory network copy
