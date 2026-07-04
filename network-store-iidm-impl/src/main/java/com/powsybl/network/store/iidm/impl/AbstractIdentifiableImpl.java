@@ -61,8 +61,7 @@ public abstract class AbstractIdentifiableImpl<I extends Identifiable<I>, D exte
     public void updateResource(Consumer<Resource<D>> modifier, AttributeFilter attributeFilter, String attribute, Object oldValue, Object newValue) {
         modifier.accept(resource);
         index.updateResource(resource, attributeFilter);
-        String variantId = getNetwork().getVariantManager().getWorkingVariantId();
-        index.notifyUpdate(this, attribute, variantId, oldValue, newValue);
+        index.notifyUpdate(this, attribute, oldValue, newValue);
     }
 
     public void updateResource(Consumer<Resource<D>> modifier, String attribute, String variantId, Object oldValue, Supplier<Object> newValueSupplier) {
@@ -96,8 +95,7 @@ public abstract class AbstractIdentifiableImpl<I extends Identifiable<I>, D exte
     public void updateResourceExtension(Extension<?> extension, Consumer<Resource<D>> modifier, String attribute, Object oldValue, Object newValue) {
         modifier.accept(resource);
         index.updateResource(resource, AttributeFilter.PRIMARY_AS_NULL);
-        String variantId = getNetwork().getVariantManager().getWorkingVariantId();
-        getIndex().notifyExtensionUpdate(extension, attribute, variantId, oldValue, newValue);
+        getIndex().notifyExtensionUpdate(extension, attribute, oldValue, newValue);
     }
 
     public Resource<D> getNullableResource() {

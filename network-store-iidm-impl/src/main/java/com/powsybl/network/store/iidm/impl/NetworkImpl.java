@@ -243,9 +243,16 @@ public class NetworkImpl extends AbstractIdentifiableImpl<Network, NetworkAttrib
         return getResource().getAttributes().getSourceFormat();
     }
 
+    private VariantManagerImpl variantManager;
+
     @Override
     public VariantManagerImpl getVariantManager() {
-        return new VariantManagerImpl(index);
+        // the variant manager is stateless, keep a single instance as this method is called on every attribute
+        // update notification
+        if (variantManager == null) {
+            variantManager = new VariantManagerImpl(index);
+        }
+        return variantManager;
     }
 
     @Override
