@@ -34,6 +34,10 @@ public class ExtensionAttributesIdResolver extends TypeIdResolverBase {
 
     @Override
     public String idFromValueAndType(Object obj, Class<?> subType) {
+        if (obj instanceof RawExtensionAttributes rawExtensionAttributes && rawExtensionAttributes.getExtensionName() != null) {
+            // extension unknown on this side: restore the name it was received with
+            return rawExtensionAttributes.getExtensionName();
+        }
         return ExtensionLoaders.findLoaderByAttributes(subType).getName();
     }
 
