@@ -12,10 +12,12 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.powsybl.commons.json.JsonUtil;
 import com.powsybl.network.store.model.*;
-import org.apache.commons.lang3.mutable.MutableInt;
 import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -27,7 +29,7 @@ public class CachedNetworkStoreClient extends AbstractForwardingNetworkStoreClie
 
     private static final int MAX_GET_IDENTIFIABLE_CALL_COUNT = 10;
 
-    private final Map<UUID, List<VariantInfos>> variantsInfosByNetworkUuid = new HashMap<>();
+    private final Map<UUID, List<VariantInfos>> variantsInfosByNetworkUuid = new ConcurrentHashMap<>();
 
     private final NetworkCollectionIndex<CollectionCache<NetworkAttributes>> networksCache =
             new NetworkCollectionIndex<>(() -> new CollectionCache<>(
@@ -201,9 +203,9 @@ public class CachedNetworkStoreClient extends AbstractForwardingNetworkStoreClie
 
     private final Map<ResourceType, NetworkCollectionIndex<? extends CollectionCache<? extends IdentifiableAttributes>>> networkContainersCaches = new EnumMap<>(ResourceType.class);
 
-    private final Map<Pair<UUID, Integer>, MutableInt> identifiableCallCountByNetworkVariant = new HashMap<>();
+    private final Map<Pair<UUID, Integer>, AtomicInteger> identifiableCallCountByNetworkVariant = new ConcurrentHashMap<>();
 
-    private final Map<Pair<UUID, Integer>, Set<String>> identifiablesIdsByNetworkVariant = new HashMap<>();
+    private final Map<Pair<UUID, Integer>, Set<String>> identifiablesIdsByNetworkVariant = new ConcurrentHashMap<>();
 
     public CachedNetworkStoreClient(NetworkStoreClient delegate) {
         super(delegate);
@@ -245,7 +247,7 @@ public class CachedNetworkStoreClient extends AbstractForwardingNetworkStoreClie
             // initialize network sub-collection cache to set to fully loaded
             networkContainersCaches.values().forEach(cache -> cache.getCollection(networkUuid, networkResource.getVariantNum()).init());
 
-            variantsInfosByNetworkUuid.computeIfAbsent(networkUuid, k -> new ArrayList<>())
+            variantsInfosByNetworkUuid.computeIfAbsent(networkUuid, k -> new CopyOnWriteArrayList<>())
                     .add(new VariantInfos(networkResource.getAttributes().getVariantId(), networkResource.getVariantNum()));
         }
     }
@@ -264,9 +266,9 @@ public class CachedNetworkStoreClient extends AbstractForwardingNetworkStoreClie
     @Override
     public List<VariantInfos> getVariantsInfos(UUID networkUuid, boolean disableCache) {
         if (disableCache) {
-            return variantsInfosByNetworkUuid.compute(networkUuid, (uuid, oldValue) -> delegate.getVariantsInfos(uuid, true));
+            return variantsInfosByNetworkUuid.compute(networkUuid, (uuid, oldValue) -> new CopyOnWriteArrayList<>(delegate.getVariantsInfos(uuid, true)));
         }
-        return variantsInfosByNetworkUuid.computeIfAbsent(networkUuid, delegate::getVariantsInfos);
+        return variantsInfosByNetworkUuid.computeIfAbsent(networkUuid, uuid -> new CopyOnWriteArrayList<>(delegate.getVariantsInfos(uuid)));
     }
 
     @Override
@@ -355,7 +357,7 @@ public class CachedNetworkStoreClient extends AbstractForwardingNetworkStoreClie
                     }
                 });
 
-        variantsInfosByNetworkUuid.computeIfAbsent(networkUuid, k -> new ArrayList<>())
+        variantsInfosByNetworkUuid.computeIfAbsent(networkUuid, k -> new CopyOnWriteArrayList<>())
                 .add(new VariantInfos(targetVariantId, targetVariantNum));
     }
 
@@ -1254,8 +1256,9 @@ public class CachedNetworkStoreClient extends AbstractForwardingNetworkStoreClie
         // getting it from the server
         var p = Pair.of(networkUuid, variantNum);
         Set<String> identifiablesIds = identifiablesIdsByNetworkVariant.get(p);
-        if (identifiablesIds == null && identifiableCallCountByNetworkVariant.getOrDefault(p, new MutableInt()).getValue() > MAX_GET_IDENTIFIABLE_CALL_COUNT) {
-            identifiablesIds = new HashSet<>(delegate.getIdentifiablesIds(networkUuid, variantNum));
+        if (identifiablesIds == null && identifiableCallCountByNetworkVariant.getOrDefault(p, new AtomicInteger()).get() > MAX_GET_IDENTIFIABLE_CALL_COUNT) {
+            identifiablesIds = ConcurrentHashMap.newKeySet();
+            identifiablesIds.addAll(delegate.getIdentifiablesIds(networkUuid, variantNum));
             identifiablesIdsByNetworkVariant.put(p, identifiablesIds);
         }
 
@@ -1271,8 +1274,8 @@ public class CachedNetworkStoreClient extends AbstractForwardingNetworkStoreClie
             collection.addOrReplaceResource(r);
         });
 
-        identifiableCallCountByNetworkVariant.computeIfAbsent(p, k -> new MutableInt())
-                .increment();
+        identifiableCallCountByNetworkVariant.computeIfAbsent(p, k -> new AtomicInteger())
+                .incrementAndGet();
 
         return resource;
     }

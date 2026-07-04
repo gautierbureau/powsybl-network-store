@@ -107,19 +107,26 @@ public class PreloadingNetworkStoreClient extends AbstractForwardingNetworkStore
     boolean isResourceTypeCached(UUID networkUuid, int variantNum, ResourceType resourceType) {
         Set<ResourceType> resourceTypes = cachedResourceTypes.getCollection(networkUuid, variantNum);
         Objects.requireNonNull(resourceType);
-        return resourceTypes.contains(resourceType);
+        synchronized (resourceTypes) {
+            return resourceTypes.contains(resourceType);
+        }
     }
 
     private void ensureCached(ResourceType resourceType, UUID networkUuid, int variantNum) {
         Objects.requireNonNull(resourceType);
         Objects.requireNonNull(networkUuid);
         Set<ResourceType> resourceTypes = cachedResourceTypes.getCollection(networkUuid, variantNum);
-        if (!resourceTypes.contains(resourceType)) {
-            if (allCollectionsNeededForBusView && RESOURCE_TYPES_NEEDED_FOR_BUS_VIEW.contains(resourceType)) {
-                loadAllCollectionsNeededForBusView(networkUuid, variantNum, resourceTypes);
-            } else {
-                loadToCache(resourceType, networkUuid, variantNum);
-                resourceTypes.add(resourceType);
+        // the lock is held during the load so that another thread requesting the same (network, variant) waits for
+        // the preloading to complete instead of triggering it a second time; threads on distinct variants use
+        // distinct sets so they stay parallel
+        synchronized (resourceTypes) {
+            if (!resourceTypes.contains(resourceType)) {
+                if (allCollectionsNeededForBusView && RESOURCE_TYPES_NEEDED_FOR_BUS_VIEW.contains(resourceType)) {
+                    loadAllCollectionsNeededForBusView(networkUuid, variantNum, resourceTypes);
+                } else {
+                    loadToCache(resourceType, networkUuid, variantNum);
+                    resourceTypes.add(resourceType);
+                }
             }
         }
     }
