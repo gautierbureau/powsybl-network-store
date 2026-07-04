@@ -36,6 +36,47 @@ class VariantMultiThreadAccessTest {
     private static final double INITIAL_TARGET_P = 607;
 
     @Test
+    void workingVariantIdStableUnderCloneRemoveChurn() throws Exception {
+        // regression test: getWorkingVariantId used to resolve this thread's variant num through
+        // the shared variants infos cache, which a concurrent clone retry or variant removal could
+        // refresh at the same moment, transiently losing a live variant and throwing
+        Network network = EurostagTutorialExample1Factory.create();
+        VariantManager variantManager = network.getVariantManager();
+        variantManager.allowVariantMultiThreadAccess(true);
+
+        int threadCount = 4;
+        int iterations = 50;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        try {
+            CyclicBarrier barrier = new CyclicBarrier(threadCount);
+            List<Future<?>> futures = new ArrayList<>();
+            for (int t = 0; t < threadCount; t++) {
+                int thread = t;
+                futures.add(executor.submit(() -> {
+                    barrier.await();
+                    for (int i = 0; i < iterations; i++) {
+                        String variantId = "churn_" + thread + "_" + i;
+                        variantManager.cloneVariant(VariantManagerConstants.INITIAL_VARIANT_ID, variantId);
+                        variantManager.setWorkingVariant(variantId);
+                        assertEquals(variantId, variantManager.getWorkingVariantId());
+                        network.getGenerator("GEN").setTargetP(100 + thread);
+                        assertEquals(variantId, variantManager.getWorkingVariantId());
+                        variantManager.removeVariant(variantId);
+                    }
+                    return null;
+                }));
+            }
+            for (Future<?> future : futures) {
+                future.get(2, TimeUnit.MINUTES);
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+        // all churn variants removed, only the initial variant is left
+        assertEquals(List.of(VariantManagerConstants.INITIAL_VARIANT_ID), List.copyOf(variantManager.getVariantIds()));
+    }
+
+    @Test
     void multiThreadReadAccessOnDistinctVariants() throws Exception {
         Network network = EurostagTutorialExample1Factory.create();
         VariantManager variantManager = network.getVariantManager();

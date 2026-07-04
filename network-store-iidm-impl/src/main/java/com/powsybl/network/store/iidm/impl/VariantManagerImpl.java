@@ -10,6 +10,8 @@ import com.powsybl.commons.PowsyblException;
 import com.powsybl.iidm.network.NetworkListener;
 import com.powsybl.iidm.network.VariantManager;
 import com.powsybl.iidm.network.VariantManagerConstants;
+import com.powsybl.network.store.model.NetworkAttributes;
+import com.powsybl.network.store.model.Resource;
 import com.powsybl.network.store.model.VariantInfos;
 import com.powsybl.network.store.model.utils.VariantUtils;
 import org.slf4j.Logger;
@@ -40,8 +42,19 @@ public class VariantManagerImpl implements VariantManager {
 
     @Override
     public String getWorkingVariantId() {
+        int workingVariantNum = index.getWorkingVariantNum();
+        if (workingVariantNum == -1) {
+            throw new PowsyblException("Variant index not set");
+        }
+        // read from this thread's variant context (the network resource carries the variant id)
+        // instead of resolving the working variant num through the shared variants infos cache,
+        // which another thread may be refreshing concurrently (clone retry, variant removal)
+        Resource<NetworkAttributes> networkResource = index.getNetworkResource();
+        if (networkResource != null) {
+            return networkResource.getAttributes().getVariantId();
+        }
         return index.getStoreClient().getVariantsInfos(index.getNetwork().getUuid()).stream()
-                .filter(infos -> infos.getNum() == index.getWorkingVariantNum())
+                .filter(infos -> infos.getNum() == workingVariantNum)
                 .map(VariantInfos::getId)
                 .findFirst()
                 .orElseThrow();

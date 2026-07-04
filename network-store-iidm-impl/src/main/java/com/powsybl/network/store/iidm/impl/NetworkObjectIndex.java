@@ -261,6 +261,10 @@ public class NetworkObjectIndex {
 
         private int workingVariantNum;
 
+        // true while setWorkingVariantNum rebuilds this context from the store: the re-entrant
+        // context accesses of the rebuild must not revalidate the half-updated (num, resource) pair
+        private boolean updating;
+
         private long validatedVariantsModificationCount;
 
         private Resource<NetworkAttributes> networkResource;
@@ -503,6 +507,9 @@ public class NetworkObjectIndex {
             return defaultContext;
         }
         VariantContext context = threadContext.get();
+        if (context.updating) {
+            return context;
+        }
         long modificationCount = variantsModificationCount.get();
         if (context.validatedVariantsModificationCount != modificationCount) {
             revalidateWorkingVariant(context);
@@ -540,10 +547,23 @@ public class NetworkObjectIndex {
 
     public void setWorkingVariantNum(int workingVariantNum) {
         VariantContext context = getVariantContext();
-        context.workingVariantNum = workingVariantNum;
-        if (workingVariantNum != -1) {
-            network.setResource(storeClient.getNetwork(networkUuid, workingVariantNum).orElseThrow());
-            context.setResourcesToObjects();
+        // the context is rebuilt from the store below: freeze revalidation during the rebuild (a
+        // concurrent variant removal must not judge the half-updated (num, resource) pair), and
+        // stamp the validation count taken before the rebuild so anything that happened during it
+        // is re-checked, on the then consistent state, at the next access
+        long modificationCountBeforeUpdate = variantsModificationCount.get();
+        context.updating = true;
+        try {
+            context.workingVariantNum = workingVariantNum;
+            if (workingVariantNum != -1) {
+                network.setResource(storeClient.getNetwork(networkUuid, workingVariantNum).orElseThrow());
+                context.setResourcesToObjects();
+            } else {
+                context.networkResource = null;
+            }
+            context.validatedVariantsModificationCount = modificationCountBeforeUpdate;
+        } finally {
+            context.updating = false;
         }
     }
 
