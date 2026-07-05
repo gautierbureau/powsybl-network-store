@@ -103,9 +103,8 @@ public class NetworkStoreService implements AutoCloseable {
         var cachedClient = new CachedNetworkStoreClient(new BufferedNetworkStoreClient(new RestNetworkStoreClient(restClient), executorService));
         return switch (preloadingStrategy) {
             case NONE -> cachedClient;
-            case COLLECTION -> new PreloadingNetworkStoreClient(cachedClient, false, executorService);
-            case ALL_COLLECTIONS_NEEDED_FOR_BUS_VIEW ->
-                new PreloadingNetworkStoreClient(cachedClient, true, executorService);
+            case COLLECTION, ALL_COLLECTIONS_NEEDED_FOR_BUS_VIEW, ALL_COLLECTIONS_NEEDED_FOR_COMPUTATION ->
+                new PreloadingNetworkStoreClient(cachedClient, preloadingStrategy, executorService);
         };
     }
 
