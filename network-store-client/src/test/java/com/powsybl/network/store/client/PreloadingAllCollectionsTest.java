@@ -13,8 +13,10 @@ import com.powsybl.network.store.model.ResourceType;
 import org.junit.Test;
 
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ForkJoinPool;
 
@@ -127,17 +129,21 @@ public class PreloadingAllCollectionsTest {
         UUID networkUuid = UUID.fromString("7928181c-7977-4592-ba19-88027e4254e4");
         client.getSubstations(networkUuid, 0);
 
-        // the preloading has bulk loaded the extensions of every preloaded collection, exactly once per type
+        // the preloading has bulk loaded the extensions of every preloaded collection, plus the network
+        // level ones (e.g. referenceTerminals), exactly once per type
+        Set<ResourceType> expectedTypes = EnumSet.copyOf(PreloadingNetworkStoreClient.RESOURCE_TYPES_NEEDED_FOR_COMPUTATION);
+        expectedTypes.add(ResourceType.NETWORK);
         Map<ResourceType, Integer> bulkLoadsByType = offlineClient.getBulkLoadsByType();
-        assertEquals(PreloadingNetworkStoreClient.RESOURCE_TYPES_NEEDED_FOR_COMPUTATION, bulkLoadsByType.keySet());
+        assertEquals(expectedTypes, bulkLoadsByType.keySet());
         bulkLoadsByType.forEach((resourceType, count) -> assertEquals(1, (int) count));
         assertEquals(0, offlineClient.getLazyLoads());
 
         // any further extension access is a cache hit (even a miss on an absent extension), no delegate call
         assertFalse(client.getExtensionAttributes(networkUuid, 0, ResourceType.GENERATOR, "gen1", "activePowerControl").isPresent());
         assertTrue(client.getAllExtensionsAttributesByIdentifiableId(networkUuid, 0, ResourceType.GENERATOR, "gen1").isEmpty());
+        assertFalse(client.getExtensionAttributes(networkUuid, 0, ResourceType.NETWORK, "net1", "referenceTerminals").isPresent());
         bulkLoadsByType = offlineClient.getBulkLoadsByType();
-        assertEquals(PreloadingNetworkStoreClient.RESOURCE_TYPES_NEEDED_FOR_COMPUTATION, bulkLoadsByType.keySet());
+        assertEquals(expectedTypes, bulkLoadsByType.keySet());
         bulkLoadsByType.forEach((resourceType, count) -> assertEquals(1, (int) count));
         assertEquals(0, offlineClient.getLazyLoads());
     }

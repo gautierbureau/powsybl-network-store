@@ -125,7 +125,7 @@ public class PreloadingNetworkStoreClient extends AbstractForwardingNetworkStore
         // each collection cache as fully loaded, so any extension access during the computation is a
         // cache hit (even a negative one) instead of a lazy REST call
         Stopwatch stopwatch = Stopwatch.createStarted();
-        List<Future<?>> futures = new ArrayList<>(resourceTypesToLoad.size());
+        List<Future<?>> futures = new ArrayList<>(resourceTypesToLoad.size() + 1);
         for (ResourceType resourceType : resourceTypesToLoad) {
             futures.add(executorService.submit(() -> {
                 loadToCache(resourceType, networkUuid, variantNum);
@@ -136,6 +136,13 @@ public class PreloadingNetworkStoreClient extends AbstractForwardingNetworkStore
                     delegate.loadAllExtensionsAttributesByResourceType(networkUuid, variantNum, resourceType);
                 }
             }));
+        }
+        if (withComputationExtras) {
+            // also prefetch the network level extensions (e.g. referenceTerminals, written and read by
+            // every load flow): the network resource is not one of the preloaded collections but it is
+            // already in the cache (loading it is how the preloading gets triggered at all)
+            futures.add(executorService.submit(() ->
+                delegate.loadAllExtensionsAttributesByResourceType(networkUuid, variantNum, ResourceType.NETWORK)));
         }
         ExecutorUtil.waitAllFutures(futures);
         resourceTypes.addAll(resourceTypesToLoad);
