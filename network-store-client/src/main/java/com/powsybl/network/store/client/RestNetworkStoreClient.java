@@ -342,6 +342,28 @@ public class RestNetworkStoreClient implements NetworkStoreClient {
     }
 
     @Override
+    public AllCollectionsBundle getAllCollections(UUID networkUuid, int variantNum) {
+        LOGGER.info("Loading all collections /networks/{}/{}/collections", networkUuid, variantNum);
+        Stopwatch stopwatch = Stopwatch.createStarted();
+        AllCollectionsBundle bundle = restClient.<AllCollectionsBundle>getIfExists("/networks/{networkUuid}/{variantNum}/collections",
+            new ParameterizedTypeReference<>() {
+            }, networkUuid, variantNum).orElse(null);
+        stopwatch.stop();
+        if (bundle == null) {
+            // server does not expose the collections endpoint yet
+            LOGGER.info("Collections endpoint not available on the server, falling back to per collection loading");
+            return null;
+        }
+        if (LOGGER.isInfoEnabled()) {
+            LOGGER.info("{} collections ({} resources) loaded in {} ms",
+                bundle.getResources() == null ? 0 : bundle.getResources().size(),
+                bundle.getResources() == null ? 0 : bundle.getResources().values().stream().mapToInt(List::size).sum(),
+                stopwatch.elapsed(TimeUnit.MILLISECONDS));
+        }
+        return bundle;
+    }
+
+    @Override
     public void deleteNetwork(UUID networkUuid) {
         LOGGER.info("Removing network {}", networkUuid);
         restClient.delete(URL_NETWORK_UUID, networkUuid);

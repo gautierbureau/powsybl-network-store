@@ -207,6 +207,18 @@ public class RestClientImpl implements RestClient {
     }
 
     @Override
+    public <E> Optional<E> getIfExists(String url, ParameterizedTypeReference<E> responseType, Object... uriVariables) {
+        ResponseEntity<E> response = restTemplate.exchange(url, HttpMethod.GET, null, responseType, uriVariables);
+        if (response.getStatusCode() == HttpStatus.NOT_FOUND) {
+            return Optional.empty();
+        }
+        if (response.getStatusCode() != HttpStatus.OK) {
+            throw createHttpException(url, "get", response.getStatusCode());
+        }
+        return Optional.ofNullable(response.getBody());
+    }
+
+    @Override
     public void put(String url, Object... uriVariables) {
         ResponseEntity<Void> response = restTemplate.exchange(url, HttpMethod.PUT, null, Void.class, uriVariables);
         if (response.getStatusCode() != HttpStatus.OK) {

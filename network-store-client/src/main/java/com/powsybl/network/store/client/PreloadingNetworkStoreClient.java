@@ -165,7 +165,16 @@ public class PreloadingNetworkStoreClient extends AbstractForwardingNetworkStore
         if (!resourceTypes.contains(resourceType)) {
             if (preloadingStrategy == PreloadingStrategy.ALL_COLLECTIONS_NEEDED_FOR_COMPUTATION
                 && RESOURCE_TYPES_NEEDED_FOR_COMPUTATION.contains(resourceType)) {
-                loadAllCollections(networkUuid, variantNum, RESOURCE_TYPES_NEEDED_FOR_COMPUTATION, true, resourceTypes);
+                // try a single server round trip for all the collections first; fall back to one
+                // (parallel) request per collection when the server does not support it
+                Stopwatch stopwatch = Stopwatch.createStarted();
+                Set<ResourceType> loadedResourceTypes = delegate.loadAllCollections(networkUuid, variantNum);
+                if (loadedResourceTypes != null) {
+                    resourceTypes.addAll(loadedResourceTypes);
+                    LOGGER.info("All collections loaded in a single round trip in {} ms", stopwatch.elapsed(TimeUnit.MILLISECONDS));
+                } else {
+                    loadAllCollections(networkUuid, variantNum, RESOURCE_TYPES_NEEDED_FOR_COMPUTATION, true, resourceTypes);
+                }
             } else if (preloadingStrategy == PreloadingStrategy.ALL_COLLECTIONS_NEEDED_FOR_BUS_VIEW
                 && RESOURCE_TYPES_NEEDED_FOR_BUS_VIEW.contains(resourceType)) {
                 loadAllCollections(networkUuid, variantNum, RESOURCE_TYPES_NEEDED_FOR_BUS_VIEW, false, resourceTypes);
