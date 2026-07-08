@@ -296,6 +296,7 @@ public interface AttributesCopier {
         if (copier != null) {
             return copier.apply(attributes, objectMapper);
         }
+        ExtensionCopyFallbackLogger.logIfUnexpected(attributes.getClass());
         try (TokenBuffer buffer = new TokenBuffer(objectMapper, false)) {
             objectMapper.writeValue(buffer, attributes);
             return objectMapper.readValue(buffer.asParser(), ExtensionAttributes.class);
