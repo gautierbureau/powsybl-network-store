@@ -8,8 +8,6 @@ package com.powsybl.network.store.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.powsybl.iidm.network.DefaultMessageHeader;
@@ -17,7 +15,7 @@ import com.powsybl.iidm.network.Validable;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 
-import java.io.UncheckedIOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
@@ -196,24 +194,23 @@ public class Resource<T extends Attributes> implements Validable {
         return new Builder<>(ResourceType.AREA);
     }
 
+    @SuppressWarnings("unchecked")
     public static <T extends IdentifiableAttributes> List<Resource<T>> cloneResourcesToVariant(
         Collection<Resource<T>> resources, int newVariantNum,
         ObjectMapper objectMapper, Consumer<Resource<T>> resourcePostProcessor) {
-        // use json serialization to clone the resources of source collection
-        List<Resource<T>> clonedResources;
-        try {
-            var json = objectMapper.writeValueAsString(resources);
-            clonedResources = objectMapper.readValue(json, new TypeReference<>() {
-            });
-        } catch (JsonProcessingException e) {
-            throw new UncheckedIOException(e);
-        }
-        // reassign cloned resources to new variant number
-        for (Resource<T> clonedResource : clonedResources) {
-            clonedResource.setVariantNum(newVariantNum);
+        // deep copy the resources of the source collection with the structural (generated) copier;
+        // the object mapper is only used for the extension attributes, whose concrete classes are
+        // resolved at runtime and fall back to a jackson copy (see AttributesCopier)
+        List<Resource<T>> clonedResources = new ArrayList<>(resources.size());
+        for (Resource<T> resource : resources) {
+            T clonedAttributes = (T) AttributesCopier.copy(resource, objectMapper);
+            Resource<T> clonedResource = new Resource<>(resource.getType(), resource.getId(), newVariantNum,
+                resource.getFilter(), clonedAttributes);
+            clonedAttributes.setResource(clonedResource);
             if (resourcePostProcessor != null) {
                 resourcePostProcessor.accept(clonedResource);
             }
+            clonedResources.add(clonedResource);
         }
         return clonedResources;
     }
