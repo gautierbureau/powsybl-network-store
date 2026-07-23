@@ -11,7 +11,18 @@ reactor so they never affect the library build.
 | path | what it does |
 |---|---|
 | `copybench/` | the main runner. Reads a stored network, then benchmarks / verifies OLF security analysis, sensitivity, and the gridsuite clone-per-contingency pattern. |
-| `importer/` | `ImportMain` imports the CGMES small grid into the local store and prints its UUID; `ImportFile` imports any network file (e.g. a MATPOWER `.mat`) and prints the UUID + a size summary; `MToMat` converts a MATPOWER `.m` script to the `.mat` binary powsybl reads; `BenchPreload` times the cold preload (bundle endpoint vs per-collection) + a single-thread SA digest. |
+| `importer/` | store / file conversion tools (see below): `ImportMain`, `ImportFile`, `ExportFile`, `MToMat`, `ToXiidm`, `BenchPreload`. |
+
+### importer tools
+
+| tool | args | does |
+|---|---|---|
+| `ImportMain` | — | import the bundled CGMES small grid into the store, print `UUID=...`. |
+| `ImportFile` | `network-file` | import any network file (e.g. a MATPOWER `.mat` or an `.xiidm`) into the store, print the UUID + a size summary. |
+| `ExportFile` | `uuid out.xiidm` | read a stored network by UUID and write it as XIIDM (for external post-processing). |
+| `ToXiidm` | `in out.xiidm` | read a network file in memory (no store) and write it as XIIDM. |
+| `MToMat` | `in.m out.mat [name]` | convert a MATPOWER `.m` script to the `.mat` binary powsybl reads. |
+| `BenchPreload` | `uuid` | time the cold preload (bundle endpoint vs per-collection) + a single-thread SA digest. |
 | `delay_proxy.py` | a TCP proxy on `:8081 -> :8080` that adds a fixed per-request latency (to model network RTT on a localhost stack) and can `block` the `/collections` and `/bulk-update` endpoints to simulate an old server (exercises the client 404 fallback). Also logs each request line. |
 | `core-7.3-local-port.patch` | ports the network-store tree to the powsybl-core version OLF is built against (7.3), so the client and OLF can share one classpath in a local overlay build. Apply only when building the overlay, never commit it. |
 
@@ -45,6 +56,49 @@ java -cp benchmarks/importer/target/importer-1.0.jar:$(cat benchmarks/importer/c
 Measured on the 13659-bus case: a structural variant clone of the whole network
 is ~0.1 s, the cold computation-strategy preload ~1.6 s; the clone-per-contingency
 wall time is then dominated by the AC load flow (~3 s per solve), not the store.
+
+### Enhancing a raw case into a "real" network
+
+A MATPOWER import is bus/branch topology with minimal metadata. To turn it into a
+richer network — operational limit groups and node-breaker topology — pipe it
+through the tools in the companion **`gautierbureau/test2`** repo (a separate
+picocli CLI, powsybl-core 7.3.x; build its shaded jar with `mvn -DskipTests
+package`). The importer here handles the store/XIIDM ends:
+
+```
+# 1. stored network (or .mat) -> XIIDM
+java -cp importer.jar:$(cat importer/cp.txt) importer.ExportFile <UUID> pegase.xiidm
+#    (or, straight from the .mat without the store: importer.ToXiidm pegase.mat pegase.xiidm)
+
+# 2. operational limit groups: a LOADFLOW_BASED group per branch, permanent +
+#    temporary limits sized from an AC load flow, selected as the active group
+java -cp test2-shaded.jar com.example.transporter.AddCurrentLimits -i pegase.xiidm -o pegase_lim.xiidm
+
+# 3. bus-breaker -> node-breaker: one busbar section per bus, feeders on breaker bays
+java -cp test2-shaded.jar com.example.transporter.ConvertToNodeBreaker -i pegase_lim.xiidm -o pegase_nb.xiidm
+
+# 4. (optional) generator/transformer completion: reactive limits, ratio tap
+#    changers, energy source, active power control
+java -cp test2-shaded.jar com.example.transporter.CompleteNetwork -i pegase_nb.xiidm -o pegase_full.xiidm
+
+# 5. back into the store
+java -cp importer.jar:$(cat importer/cp.txt) importer.ImportFile pegase_nb.xiidm   # prints a new UUID
+```
+
+Notes:
+- **IIDM version** — test2 writes IIDM schema 1.17 (powsybl-core 7.3.x); the
+  importer module must be on the same core line (its BOM imports
+  `powsybl-core:7.3.0-RC2`), or `Network.read` / the store import reports
+  "No importer found" on the `.xiidm`.
+- **Limit sizing needs a converged base case** — PEGASE 13659 converges at the
+  base case (a bus only drops out of range under a contingency), so the limits
+  are sized correctly. On a case that does not converge, use `AddCurrentLimits
+  --min-current` as the fallback.
+- The node-breaker conversion **preserves** the operational limit groups, so
+  limits-then-topology (as above) is fine. On the 13659-bus case the result is
+  ~118k switches + 13659 busbar sections, with a selected limit group on ~14.5k
+  of the 14.7k lines — a good target for the switch collection and the
+  selected-limits loading paths.
 
 ## Running
 
