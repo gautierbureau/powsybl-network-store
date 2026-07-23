@@ -1,0 +1,348 @@
+diff --git a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/AbstractBranchImpl.java b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/AbstractBranchImpl.java
+index a252761..c84563b 100644
+--- a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/AbstractBranchImpl.java
++++ b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/AbstractBranchImpl.java
+@@ -697,7 +697,7 @@ public abstract class AbstractBranchImpl<T extends Branch<T> & Connectable<T>, U
+     }
+ 
+     @Override
+-    public Collection<OperationalLimitsGroup> getAllSelectedOperationalLimitsGroups(TwoSides side) {
++    public List<OperationalLimitsGroup> getAllSelectedOperationalLimitsGroups(TwoSides side) {
+         //
+         // TODO : to be completed later, when we will handle multiple selected operational limits groups on one side
+         // For now, we only return the one selected
+@@ -705,7 +705,7 @@ public abstract class AbstractBranchImpl<T extends Branch<T> & Connectable<T>, U
+         Optional<OperationalLimitsGroup> selectedOperationalLimitsGroup = side == TwoSides.ONE ?
+             getSelectedOperationalLimitsGroup1() :
+             getSelectedOperationalLimitsGroup2();
+-        return selectedOperationalLimitsGroup.map(Set::of).orElseGet(Set::of);
++        return selectedOperationalLimitsGroup.map(List::of).orElseGet(List::of);
+     }
+ 
+     @Override
+diff --git a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/AbstractLoadingLimits.java b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/AbstractLoadingLimits.java
+index d375013..a4040a1 100644
+--- a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/AbstractLoadingLimits.java
++++ b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/AbstractLoadingLimits.java
+@@ -93,12 +93,30 @@ public abstract class AbstractLoadingLimits<S, O extends LimitsOwner<S>, T exten
+ 
+     @Override
+     public T setPermanentLimit(double permanentLimit) {
+-        ValidationUtil.checkPermanentLimit(owner, permanentLimit, getTemporaryLimits(), owner.getIdentifiable().getNetwork().getMinValidationLevel(), owner.getIdentifiable().getNetwork()
++        ValidationUtil.checkPermanentLimit(owner, permanentLimit, DetectionKind.HIGH, getTemporaryLimits(), owner.getIdentifiable().getNetwork().getMinValidationLevel(), owner.getIdentifiable().getNetwork()
+                 .getReportNodeContext().getReportNode());
+         attributes.setPermanentLimit(permanentLimit);
+         return (T) this;
+     }
+ 
++    @Override
++    public DetectionKind getDetectionKind() {
++        // local port to core 7.3: detection kind is not persisted in the network-store model yet
++        return DetectionKind.HIGH;
++    }
++
++    @Override
++    public String getPermanentLimitName() {
++        // local port to core 7.3: permanent limit name is not persisted in the network-store model yet
++        return null;
++    }
++
++    @Override
++    public T setPermanentLimitName(String permanentLimitName) {
++        // local port to core 7.3: permanent limit name is not persisted in the network-store model yet
++        return (T) this;
++    }
++
+     @Override
+     public Collection<TemporaryLimit> getTemporaryLimits() {
+         return attributes.getTemporaryLimits() == null ? Collections.emptyList()
+diff --git a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/AbstractLoadingLimitsAdderImpl.java b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/AbstractLoadingLimitsAdderImpl.java
+index 8276e84..fa718be 100644
+--- a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/AbstractLoadingLimitsAdderImpl.java
++++ b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/AbstractLoadingLimitsAdderImpl.java
+@@ -7,6 +7,7 @@
+ package com.powsybl.network.store.iidm.impl;
+ 
+ import com.powsybl.iidm.network.AbstractBasePropertiesHolder;
++import com.powsybl.iidm.network.DetectionKind;
+ import com.powsybl.iidm.network.LoadingLimits;
+ import com.powsybl.iidm.network.LoadingLimits.TemporaryLimit;
+ import com.powsybl.iidm.network.LoadingLimitsAdder;
+@@ -57,6 +58,23 @@ public abstract class AbstractLoadingLimitsAdderImpl<S, O extends LimitsOwner<S>
+         return (A) this;
+     }
+ 
++    @Override
++    public A setPermanentLimitName(String permanentLimitName) {
++        // local port to core 7.3: permanent limit name is not persisted in the network-store model yet
++        return (A) this;
++    }
++
++    @Override
++    public A setDetectionKind(DetectionKind detectionKind) {
++        // local port to core 7.3: detection kind is not persisted in the network-store model yet
++        return (A) this;
++    }
++
++    @Override
++    public DetectionKind getDetectionKind() {
++        return DetectionKind.HIGH;
++    }
++
+     public O getOwner() {
+         return owner;
+     }
+@@ -177,7 +195,7 @@ public abstract class AbstractLoadingLimitsAdderImpl<S, O extends LimitsOwner<S>
+         NetworkImpl network = owner.getIdentifiable().getNetwork();
+         Collection<TemporaryLimit> temporaryLimitsToAdd = temporaryLimits == null ? Collections.emptyList() : temporaryLimits.values().stream().map(l -> new TemporaryLimitImpl(l, null)).collect(
+                 Collectors.toList());
+-        ValidationUtil.checkPermanentLimit(owner, permanentLimit, temporaryLimitsToAdd, network.getMinValidationLevel(), network.getReportNodeContext().getReportNode());
++        ValidationUtil.checkPermanentLimit(owner, permanentLimit, DetectionKind.HIGH, temporaryLimitsToAdd, network.getMinValidationLevel(), network.getReportNodeContext().getReportNode());
+         checkTemporaryLimits();
+ 
+         LimitsAttributes attributes = LimitsAttributes.builder()
+diff --git a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/BatteryImpl.java b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/BatteryImpl.java
+index 0068806..e600305 100644
+--- a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/BatteryImpl.java
++++ b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/BatteryImpl.java
+@@ -143,6 +143,11 @@ public class BatteryImpl extends AbstractInjectionImpl<Battery, BatteryAttribute
+         return new ReactiveCapabilityCurveAdderImpl<>(this);
+     }
+ 
++    @Override
++    public ReactiveCapabilityShapeAdder newReactiveCapabilityShape() {
++        throw new UnsupportedOperationException("Reactive capability shape is not supported by the network-store implementation");
++    }
++
+     @Override
+     public <E extends Extension<Battery>> E getExtension(Class<? super E> type) {
+         E extension;
+diff --git a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/BoundaryLineImpl.java b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/BoundaryLineImpl.java
+index d7d0fbf..4898aec 100644
+--- a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/BoundaryLineImpl.java
++++ b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/BoundaryLineImpl.java
+@@ -147,6 +147,11 @@ public class BoundaryLineImpl extends AbstractInjectionImpl<BoundaryLine, Bounda
+             return new ReactiveCapabilityCurveAdderImpl<>(this, boundaryLine);
+         }
+ 
++        @Override
++        public ReactiveCapabilityShapeAdder newReactiveCapabilityShape() {
++            throw new UnsupportedOperationException("Reactive capability shape is not supported by the network-store implementation");
++        }
++
+         @Override
+         public MinMaxReactiveLimitsAdderImpl<GenerationImpl> newMinMaxReactiveLimits() {
+             return new MinMaxReactiveLimitsAdderImpl<>(this, boundaryLine);
+@@ -591,8 +596,8 @@ public class BoundaryLineImpl extends AbstractInjectionImpl<BoundaryLine, Bounda
+     }
+ 
+     @Override
+-    public Collection<OperationalLimitsGroup> getAllSelectedOperationalLimitsGroups() {
+-        return getSelectedOperationalLimitsGroup().map(Set::of).orElseGet(Set::of);
++    public List<OperationalLimitsGroup> getAllSelectedOperationalLimitsGroups() {
++        return getSelectedOperationalLimitsGroup().map(List::of).orElseGet(List::of);
+     }
+ 
+     @Override
+diff --git a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/GeneratorImpl.java b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/GeneratorImpl.java
+index 1efdb36..2991f91 100644
+--- a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/GeneratorImpl.java
++++ b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/GeneratorImpl.java
+@@ -254,6 +254,11 @@ public class GeneratorImpl extends AbstractRegulatingInjection<Generator, Genera
+         return new ReactiveCapabilityCurveAdderImpl<>(this);
+     }
+ 
++    @Override
++    public ReactiveCapabilityShapeAdder newReactiveCapabilityShape() {
++        throw new UnsupportedOperationException("Reactive capability shape is not supported by the network-store implementation");
++    }
++
+     @Override
+     public MinMaxReactiveLimitsAdder newMinMaxReactiveLimits() {
+         return new MinMaxReactiveLimitsAdderImpl<>(this, this);
+diff --git a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/ThreeWindingsTransformerImpl.java b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/ThreeWindingsTransformerImpl.java
+index bbd29dd..70578d1 100644
+--- a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/ThreeWindingsTransformerImpl.java
++++ b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/ThreeWindingsTransformerImpl.java
+@@ -459,8 +459,8 @@ public class ThreeWindingsTransformerImpl extends AbstractConnectableImpl<ThreeW
+         }
+ 
+         @Override
+-        public Collection<OperationalLimitsGroup> getAllSelectedOperationalLimitsGroups() {
+-            return getSelectedOperationalLimitsGroup().map(Set::of).orElseGet(Set::of);
++        public List<OperationalLimitsGroup> getAllSelectedOperationalLimitsGroups() {
++            return getSelectedOperationalLimitsGroup().map(List::of).orElseGet(List::of);
+         }
+ 
+         @Override
+diff --git a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/TieLineImpl.java b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/TieLineImpl.java
+index 9d4d5b6..d6d27d0 100644
+--- a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/TieLineImpl.java
++++ b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/TieLineImpl.java
+@@ -546,7 +546,7 @@ public class TieLineImpl extends AbstractIdentifiableImpl<TieLine, TieLineAttrib
+     }
+ 
+     @Override
+-    public Collection<OperationalLimitsGroup> getAllSelectedOperationalLimitsGroups(TwoSides side) {
++    public List<OperationalLimitsGroup> getAllSelectedOperationalLimitsGroups(TwoSides side) {
+         return side == TwoSides.ONE ?
+             getBoundaryLine1().getAllSelectedOperationalLimitsGroups() :
+             getBoundaryLine2().getAllSelectedOperationalLimitsGroups();
+diff --git a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/VscConverterStationImpl.java b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/VscConverterStationImpl.java
+index 24f3b00..b75d6b3 100644
+--- a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/VscConverterStationImpl.java
++++ b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/VscConverterStationImpl.java
+@@ -139,6 +139,11 @@ public class VscConverterStationImpl extends AbstractRegulatingInjection<VscConv
+         return new ReactiveCapabilityCurveAdderImpl<>(this);
+     }
+ 
++    @Override
++    public ReactiveCapabilityShapeAdder newReactiveCapabilityShape() {
++        throw new UnsupportedOperationException("Reactive capability shape is not supported by the network-store implementation");
++    }
++
+     @Override
+     public MinMaxReactiveLimitsAdder newMinMaxReactiveLimits() {
+         return new MinMaxReactiveLimitsAdderImpl<>(this, this);
+diff --git a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/extensions/LineFortescueAdderImpl.java b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/extensions/LineFortescueAdderImpl.java
+index f17a003..c3d4b80 100644
+--- a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/extensions/LineFortescueAdderImpl.java
++++ b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/extensions/LineFortescueAdderImpl.java
+@@ -58,6 +58,27 @@ public class LineFortescueAdderImpl extends AbstractIidmExtensionAdder<Line, Lin
+         return this;
+     }
+ 
++    // local port to core 7.3: zero sequence shunt parameters are not persisted in the network-store model yet
++    @Override
++    public LineFortescueAdder withG1z(double g1z) {
++        return this;
++    }
++
++    @Override
++    public LineFortescueAdder withB1z(double b1z) {
++        return this;
++    }
++
++    @Override
++    public LineFortescueAdder withG2z(double g2z) {
++        return this;
++    }
++
++    @Override
++    public LineFortescueAdder withB2z(double b2z) {
++        return this;
++    }
++
+     @Override
+     public LineFortescueAdder withOpenPhaseA(boolean openPhaseA) {
+         this.openPhaseA = openPhaseA;
+diff --git a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/extensions/LineFortescueImpl.java b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/extensions/LineFortescueImpl.java
+index ae57a52..6712b1f 100644
+--- a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/extensions/LineFortescueImpl.java
++++ b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/extensions/LineFortescueImpl.java
+@@ -57,6 +57,47 @@ public class LineFortescueImpl extends AbstractExtension<Line> implements LineFo
+         }
+     }
+ 
++    // local port to core 7.3: zero sequence shunt parameters are not persisted in the network-store model yet
++    @Override
++    public double getG1z() {
++        return Double.NaN;
++    }
++
++    @Override
++    public void setG1z(double g1z) {
++        throw new UnsupportedOperationException("g1z is not supported by the network-store implementation");
++    }
++
++    @Override
++    public double getB1z() {
++        return Double.NaN;
++    }
++
++    @Override
++    public void setB1z(double b1z) {
++        throw new UnsupportedOperationException("b1z is not supported by the network-store implementation");
++    }
++
++    @Override
++    public double getG2z() {
++        return Double.NaN;
++    }
++
++    @Override
++    public void setG2z(double g2z) {
++        throw new UnsupportedOperationException("g2z is not supported by the network-store implementation");
++    }
++
++    @Override
++    public double getB2z() {
++        return Double.NaN;
++    }
++
++    @Override
++    public void setB2z(double b2z) {
++        throw new UnsupportedOperationException("b2z is not supported by the network-store implementation");
++    }
++
+     @Override
+     public boolean isOpenPhaseA() {
+         return getLineFortescueAttributes().isOpenPhaseA();
+diff --git a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/extensions/TwoWindingsTransformerFortescueAdderImpl.java b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/extensions/TwoWindingsTransformerFortescueAdderImpl.java
+index 5d86d32..497539b 100644
+--- a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/extensions/TwoWindingsTransformerFortescueAdderImpl.java
++++ b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/extensions/TwoWindingsTransformerFortescueAdderImpl.java
+@@ -69,6 +69,12 @@ public class TwoWindingsTransformerFortescueAdderImpl extends AbstractIidmExtens
+         return this;
+     }
+ 
++    // local port to core 7.3: magnetizing reactance is not persisted in the network-store model yet
++    @Override
++    public TwoWindingsTransformerFortescueAdder withXm(double xm) {
++        return this;
++    }
++
+     @Override
+     public TwoWindingsTransformerFortescueAdderImpl withFreeFluxes(boolean freeFluxes) {
+         this.freeFluxes = freeFluxes;
+diff --git a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/extensions/TwoWindingsTransformerFortescueImpl.java b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/extensions/TwoWindingsTransformerFortescueImpl.java
+index 765b471..68669c4 100644
+--- a/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/extensions/TwoWindingsTransformerFortescueImpl.java
++++ b/network-store-iidm-impl/src/main/java/com/powsybl/network/store/iidm/impl/extensions/TwoWindingsTransformerFortescueImpl.java
+@@ -58,6 +58,17 @@ public class TwoWindingsTransformerFortescueImpl extends AbstractExtension<TwoWi
+         }
+     }
+ 
++    // local port to core 7.3: magnetizing reactance is not persisted in the network-store model yet
++    @Override
++    public double getXm() {
++        return Double.NaN;
++    }
++
++    @Override
++    public void setXm(double xm) {
++        throw new UnsupportedOperationException("xm is not supported by the network-store implementation");
++    }
++
+     @Override
+     public boolean isFreeFluxes() {
+         return getTwoWindingsTransformerFortescueAttributes().isFreeFluxes();
+diff --git a/pom.xml b/pom.xml
+index 92449ab..d493098 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -69,6 +69,14 @@
+     <dependencyManagement>
+         <dependencies>
+             <!-- overrides of imports -->
++            <!-- LOCAL ONLY (do not commit): force powsybl-core 7.3.0-RC2 to match the OLF copy-mode branch -->
++            <dependency>
++                <groupId>com.powsybl</groupId>
++                <artifactId>powsybl-core</artifactId>
++                <version>7.3.0-RC2</version>
++                <type>pom</type>
++                <scope>import</scope>
++            </dependency>
+ 
+             <!-- imports -->
+             <dependency>
