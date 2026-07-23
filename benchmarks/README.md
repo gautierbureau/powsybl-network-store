@@ -11,7 +11,7 @@ reactor so they never affect the library build.
 | path | what it does |
 |---|---|
 | `copybench/` | the main runner. Reads a stored network, then benchmarks / verifies OLF security analysis, sensitivity, and the gridsuite clone-per-contingency pattern. |
-| `importer/` | `ImportMain` imports the CGMES small grid into the local store and prints its UUID; `BenchPreload` times the cold preload (bundle endpoint vs per-collection) + a single-thread SA digest. |
+| `importer/` | `ImportMain` imports the CGMES small grid into the local store and prints its UUID; `ImportFile` imports any network file (e.g. a MATPOWER `.mat`) and prints the UUID + a size summary; `MToMat` converts a MATPOWER `.m` script to the `.mat` binary powsybl reads; `BenchPreload` times the cold preload (bundle endpoint vs per-collection) + a single-thread SA digest. |
 | `delay_proxy.py` | a TCP proxy on `:8081 -> :8080` that adds a fixed per-request latency (to model network RTT on a localhost stack) and can `block` the `/collections` and `/bulk-update` endpoints to simulate an old server (exercises the client 404 fallback). Also logs each request line. |
 | `core-7.3-local-port.patch` | ports the network-store tree to the powsybl-core version OLF is built against (7.3), so the client and OLF can share one classpath in a local overlay build. Apply only when building the overlay, never commit it. |
 
@@ -25,6 +25,26 @@ reactor so they never affect the library build.
 
 Point the runner at another server with `STORE_URL` (e.g. the delay proxy):
 `STORE_URL=http://localhost:8081`.
+
+### Loading a large network (scale test)
+
+powsybl's MATPOWER importer reads the binary `.mat` format, not the `.m` MATLAB
+script the cases are usually distributed as. `MToMat` converts one to the other
+by parsing the bus/gen/branch matrices into powsybl's own `MatpowerModel` and
+writing it with `MatpowerWriter` (so the output is exactly what the importer
+reads). For the PEGASE 13659-bus case:
+
+```
+# download the .m (e.g. from MATPOWER/matpower data/ or power-grid-lib/pglib-opf)
+java -cp benchmarks/importer/target/importer-1.0.jar:$(cat benchmarks/importer/cp.txt) \
+     importer.MToMat case13659pegase.m case13659pegase.mat
+java -cp benchmarks/importer/target/importer-1.0.jar:$(cat benchmarks/importer/cp.txt) \
+     importer.ImportFile case13659pegase.mat        # prints UUID=...
+```
+
+Measured on the 13659-bus case: a structural variant clone of the whole network
+is ~0.1 s, the cold computation-strategy preload ~1.6 s; the clone-per-contingency
+wall time is then dominated by the AC load flow (~3 s per solve), not the store.
 
 ## Running
 
