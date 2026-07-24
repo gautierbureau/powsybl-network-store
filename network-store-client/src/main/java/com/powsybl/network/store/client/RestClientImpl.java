@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.fasterxml.jackson.module.blackbird.BlackbirdModule;
 import com.powsybl.commons.PowsyblException;
 import com.powsybl.network.store.model.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -69,6 +70,9 @@ public class RestClientImpl implements RestClient {
     private static ObjectMapper createObjectMapper() {
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule())
+            // generated MethodHandle accessors instead of reflection for the large
+            // attribute deserializations of collection responses
+            .registerModule(new BlackbirdModule())
             .configure(SerializationFeature.WRITE_DATE_TIMESTAMPS_AS_NANOSECONDS, false)
             .configure(DeserializationFeature.READ_DATE_TIMESTAMPS_AS_NANOSECONDS, false);
         return objectMapper;
