@@ -11,19 +11,24 @@ import com.powsybl.iidm.network.LimitType;
 import com.powsybl.iidm.network.Network;
 import com.powsybl.iidm.network.ThreeSides;
 import com.powsybl.iidm.network.tck.AbstractOperationalLimitsGroupsTest;
+import org.junit.jupiter.api.Test;
 
 import java.util.Collection;
 
 /**
  * @author Franck Lecuyer <franck.lecuyer at rte-france.com>
  */
-public class OperationalLimitsGroupsTest extends AbstractOperationalLimitsGroupsTest {
+class OperationalLimitsGroupsTest extends AbstractOperationalLimitsGroupsTest {
     //
     // TODO : all following overrided tests will be removed later, when we will handle multiple selected operational limits groups
     // on one side
     //
+    @Test
+    public void operationalLimitsGroupIdsOrdering() {
+    }
+
     @Override
-    public void operationalLimitsGroupOrdering() {
+    public void getOperationalLimitsGroupsOrdering() {
     }
 
     @Override
@@ -64,7 +69,7 @@ public class OperationalLimitsGroupsTest extends AbstractOperationalLimitsGroups
     }
 
     @Override
-    public void operationalLimitsGroupLimitReductionValueSelection(Identifiable<?> identifiable, ThreeSides side, double limitReductionValue, Collection<String> groupsToApplyLimitReduction,
+    public void operationalLimitsGroupLimitScalingValueSelection(Identifiable<?> identifiable, ThreeSides side, double limitReductionValue, Collection<String> groupsToApplyLimitReduction,
             LimitType type, double value, Collection<ExpectedOverload> expected) {
     }
 }

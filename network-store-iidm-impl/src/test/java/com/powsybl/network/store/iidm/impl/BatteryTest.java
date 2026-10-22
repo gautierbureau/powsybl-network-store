@@ -17,8 +17,6 @@ import com.powsybl.iidm.network.extensions.ConnectablePositionAdder;
 import com.powsybl.iidm.network.test.BatteryNetworkFactory;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThrows;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -53,7 +51,7 @@ class BatteryTest {
     void updateWithInvalidTargetQ() {
         Network network = BatteryNetworkFactory.create();
         Battery battery = network.getBattery("BAT");
-        assertEquals("Battery 'BAT': q0 is invalid",
+        assertEquals("Battery 'BAT': invalid value (NaN) for localTargetQ (voltageRegulation is not set)",
                 assertThrows(ValidationException.class, () -> battery.setTargetQ(Double.NaN)).getMessage());
         network.setMinimumAcceptableValidationLevel(ValidationLevel.EQUIPMENT);
         battery.setTargetQ(Double.NaN);

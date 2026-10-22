@@ -8,22 +8,24 @@ package com.powsybl.network.store.iidm.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.powsybl.dynawo.extensions.api.generator.RpclType;
+import com.powsybl.dynawo.extensions.api.generator.SynchronousGeneratorProperties;
 import com.powsybl.network.store.model.*;
-import org.junit.Test;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
  * @author Antoine Bouhours <antoine.bouhours at rte-france.com>
  */
-public class AttributesTest {
+class AttributesTest {
 
     @Test
-    public void testSerialization() throws JsonProcessingException {
+    void testSerialization() throws JsonProcessingException {
         GeneratorStartupAttributes generatorStartupAttributes = new GeneratorStartupAttributes(0.5, 10, 5, 3, 5);
         ObjectMapper mapper = new ObjectMapper();
         String serialized = mapper.writeValueAsString(generatorStartupAttributes);
@@ -31,7 +33,7 @@ public class AttributesTest {
     }
 
     @Test
-    public void testSerDeserialization() throws JsonProcessingException {
+    void testSerDeserialization() throws JsonProcessingException {
         GeneratorStartupAttributes generatorStartupAttributes = new GeneratorStartupAttributes(0.5, 10, 5, 3, 5);
         ObjectMapper mapper = new ObjectMapper();
         String serialized = mapper.writeValueAsString(generatorStartupAttributes);
@@ -44,7 +46,25 @@ public class AttributesTest {
     }
 
     @Test
-    public void testDeserializeExtensionWithNotExistingLoader() throws JsonProcessingException {
+    void testSynchronousGeneratorPropertiesSerDeserialization() throws JsonProcessingException {
+        SynchronousGeneratorPropertiesAttributes attributes = SynchronousGeneratorPropertiesAttributes.builder()
+                .numberOfWindings(SynchronousGeneratorProperties.Windings.FOUR_WINDINGS)
+                .governor("Proportional")
+                .voltageRegulator("Proportional")
+                .auxiliaries(true)
+                .rpcl(RpclType.NONE)
+                .uva(SynchronousGeneratorProperties.Uva.LOCAL)
+                .build();
+        ObjectMapper mapper = new ObjectMapper();
+        String serialized = mapper.writeValueAsString(attributes);
+        assertEquals("{\"extensionName\":\"synchronousGeneratorProperties\",\"numberOfWindings\":\"FOUR_WINDINGS\",\"governor\":\"Proportional\","
+                + "\"voltageRegulator\":\"Proportional\",\"auxiliaries\":true,\"internalTransformer\":false,\"rpcl\":\"NONE\",\"uva\":\"LOCAL\","
+                + "\"aggregated\":false,\"qlim\":false}", serialized);
+        assertEquals(attributes, mapper.readValue(serialized, ExtensionAttributes.class));
+    }
+
+    @Test
+    void testDeserializeExtensionWithNotExistingLoader() throws JsonProcessingException {
         ObjectMapper mapper = new ObjectMapper();
         String json = "{\"extensionName\":\"unknownName\",\"unknownAttribute1\":0.5,\"unknownAttribute2\":10.0,\"unknownAttribute3\": {\"unknownAttribute4\":3.0,\"unknownAttribute5\":5.0}}";
 
@@ -62,7 +82,7 @@ public class AttributesTest {
     }
 
     @Test
-    public void testGetUnknownExtension() {
+    void testGetUnknownExtension() {
         NetworkImpl network = (NetworkImpl) CreateNetworksUtil.createNodeBreakerNetwokWithMultipleEquipments();
         LineImpl line = (LineImpl) network.getLine("LINE1");
         assertNotNull(line);

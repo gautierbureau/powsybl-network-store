@@ -7,26 +7,26 @@
 package com.powsybl.network.store.model;
 
 import com.powsybl.iidm.network.PhaseTapChanger.RegulationMode;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * @author Sylvain Bouzols <sylvain.bouzols at rte-france.com>
  */
-public class TapChangerParentTest {
+class TapChangerParentTest {
 
     List<TapChangerStepAttributes> tapChangerStepsA;
     List<TapChangerStepAttributes> tapChangerStepsB;
     List<TapChangerStepAttributes> tapChangerStepsC;
 
-    @Before
-    public void setUp() {
+    @BeforeEach
+    void setUp() {
         tapChangerStepsA = new ArrayList<>();
         tapChangerStepsA.add(TapChangerStepAttributes.builder()
             .rho(1.)
@@ -87,7 +87,7 @@ public class TapChangerParentTest {
     }
 
     @Test
-    public void twoWindingsTransformertapChangerAttributesTest() {
+    void twoWindingsTransformertapChangerAttributesTest() {
         RegulatingPointAttributes phaseTapChangerRegulatingPointAttributes = RegulatingPointAttributes.builder()
             .regulatingEquipmentId("id2WT")
             .regulatingResourceType(ResourceType.TWO_WINDINGS_TRANSFORMER)
@@ -138,7 +138,6 @@ public class TapChangerParentTest {
                                 .regulatingPoint(phaseTapChangerRegulatingPointAttributes)
                                 .loadTapChangingCapabilities(true)
                                 .targetDeadband(1.)
-                                .regulationValue(10.)
                                 .steps(tapChangerStepsB)
                                 .build()
                         )
@@ -174,7 +173,7 @@ public class TapChangerParentTest {
     }
 
     @Test
-    public void threeWindingsTransformertapChangerAttributesTest() {
+    void threeWindingsTransformertapChangerAttributesTest() {
         RegulatingPointAttributes phaseTapChangerRegulatingPointAttributes = RegulatingPointAttributes.builder()
             .regulatingEquipmentId("id2WT")
             .regulatingResourceType(ResourceType.TWO_WINDINGS_TRANSFORMER)
@@ -231,7 +230,6 @@ public class TapChangerParentTest {
                                 .regulatingPoint(ratioTapChangerRegulatingPointAttributes)
                                 .loadTapChangingCapabilities(true)
                                 .targetDeadband(1.)
-                                .regulationValue(10.)
                                 .steps(tapChangerStepsB)
                                 .build()
                             )

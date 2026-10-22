@@ -27,6 +27,7 @@ import java.util.List;
 @Schema(description = "Pilot point attributes")
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class PilotPointAttributes {
-    private List<String> busbarSectionsOrBusesIds;
+    private List<PilotPointBusAttributes> buses;
+    private List<String> busbarSectionIds;
     private double targetV;
 }

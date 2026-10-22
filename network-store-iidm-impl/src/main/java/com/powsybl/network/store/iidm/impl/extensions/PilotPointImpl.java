@@ -41,12 +41,16 @@ class PilotPointImpl implements PilotPoint {
         return pilotPointAttributes;
     }
 
-    /**
-     * Get pilot point busbar section ID or bus ID of the bus/breaker view.
-     */
     @Override
-    public List<String> getBusbarSectionsOrBusesIds() {
-        return Collections.unmodifiableList(pilotPointAttributes.getBusbarSectionsOrBusesIds());
+    public List<BusRef> getBuses() {
+        return pilotPointAttributes.getBuses() == null ? Collections.emptyList()
+                : pilotPointAttributes.getBuses().stream().map(bus -> new BusRef(bus.getVoltageLevelId(), bus.getBusId())).toList();
+    }
+
+    @Override
+    public List<String> getBusbarSectionIds() {
+        return pilotPointAttributes.getBusbarSectionIds() == null ? Collections.emptyList()
+                : Collections.unmodifiableList(pilotPointAttributes.getBusbarSectionIds());
     }
 
     @Override

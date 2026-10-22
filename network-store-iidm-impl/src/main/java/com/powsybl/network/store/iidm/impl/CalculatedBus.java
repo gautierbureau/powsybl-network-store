@@ -50,15 +50,17 @@ public final class CalculatedBus implements BaseBus {
 
     private final List<Integer> nodes;
 
+    private final List<String> buses = new ArrayList<>();
+
     // Used in bus-breaker view as nodes are not defined and won't be used in calculations
     CalculatedBus(NetworkObjectIndex index, String voltageLevelId, String id, String name,
-                  Resource<VoltageLevelAttributes> voltageLevelResource, int calculatedBusNum, boolean isBusView) {
-        this(index, voltageLevelId, id, name, voltageLevelResource, calculatedBusNum, isBusView, Collections.emptyList());
+                  Resource<VoltageLevelAttributes> voltageLevelResource, int calculatedBusNum, boolean isBusView, List<String> buses) {
+        this(index, voltageLevelId, id, name, voltageLevelResource, calculatedBusNum, isBusView, Collections.emptyList(), buses);
     }
 
     CalculatedBus(NetworkObjectIndex index, String voltageLevelId, String id, String name,
                   Resource<VoltageLevelAttributes> voltageLevelResource, int calculatedBusNum, boolean isBusView,
-                  List<Integer> nodes) {
+                  List<Integer> nodes, List<String> buses) {
         this.index = Objects.requireNonNull(index);
         this.voltageLevelId = Objects.requireNonNull(voltageLevelId);
         this.id = Objects.requireNonNull(id);
@@ -69,6 +71,7 @@ public final class CalculatedBus implements BaseBus {
         connectedComponent = new ComponentImpl(this, ComponentType.CONNECTED);
         synchronousComponent = new ComponentImpl(this, ComponentType.SYNCHRONOUS);
         this.nodes = new ArrayList<>(nodes);
+        this.buses.addAll(buses);
     }
 
     boolean isBusView() {
@@ -195,7 +198,33 @@ public final class CalculatedBus implements BaseBus {
 
     @Override
     public Component getConnectedComponent() {
+        if (!isBusView) {
+            return getMergedBus().map(Bus::getConnectedComponent).orElse(null);
+        }
         return connectedComponent;
+    }
+
+    /**
+     * The bus of the bus view that this bus of the bus-breaker view of a node/breaker topology is part of. As a configured
+     * bus of a bus/breaker topology, it is in the components of that bus: the components are calculated on the bus view,
+     * as in powsybl-core, the buses of the bus-breaker view of a network mixing both topologies being of both kinds.
+     */
+    private Optional<Bus> getMergedBus() {
+        VoltageLevelImpl voltageLevel = (VoltageLevelImpl) getVoltageLevel();
+        // the buses of the bus view by number, calculated if they are not yet
+        List<Bus> mergedBuses = ((VoltageLevelBusViewImpl) voltageLevel.getBusView()).getBuses();
+        VoltageLevelAttributes vlAttributes = voltageLevel.getResource().getAttributes();
+        Map<Integer, Integer> nodesToCalculatedBuses = vlAttributes.getNodeToCalculatedBusForBusBreakerView();
+        Map<Integer, Integer> nodesToMergedBuses = vlAttributes.getNodeToCalculatedBusForBusView();
+        if (MapUtils.isEmpty(nodesToCalculatedBuses) || MapUtils.isEmpty(nodesToMergedBuses)) {
+            return Optional.empty();
+        }
+        return nodesToCalculatedBuses.entrySet().stream()
+                .filter(entry -> entry.getValue() == calculatedBusNum)
+                .map(entry -> nodesToMergedBuses.get(entry.getKey()))
+                .filter(Objects::nonNull)
+                .findFirst()
+                .map(mergedBuses::get);
     }
 
     private CalculatedBusAttributes getAttributes() {
@@ -206,13 +235,13 @@ public final class CalculatedBus implements BaseBus {
 
     @Override
     public double getFictitiousP0() {
-        return TopologyKind.NODE_BREAKER == getVoltageLevel().getTopologyKind() ?
-            nodes.stream()
-                .mapToDouble(n -> getVoltageLevel().getNodeBreakerView().getFictitiousP0(n))
-                .reduce(0.0, Double::sum) :
-            getAllTerminalsStream().map(t -> t.getBusBreakerView().getBus()).distinct()
-                .map(Bus::getFictitiousP0)
-                .reduce(0.0, Double::sum);
+        if (TopologyKind.NODE_BREAKER == getVoltageLevel().getTopologyKind()) {
+            return nodes.stream()
+                    .mapToDouble(n -> getVoltageLevel().getNodeBreakerView().getFictitiousP0(n))
+                    .reduce(0.0, Double::sum);
+        } else {
+            return getConfiguredBusesStream().map(Bus::getFictitiousP0).reduce(0.0, Double::sum);
+        }
     }
 
     @Override
@@ -224,20 +253,21 @@ public final class CalculatedBus implements BaseBus {
             nodes.forEach(n -> getVoltageLevel().getNodeBreakerView().setFictitiousP0(n, 0.0));
             getVoltageLevel().getNodeBreakerView().setFictitiousP0(nodes.getFirst(), p0);
         } else {
-            getAllTerminalsStream().map(t -> t.getBusBreakerView().getBus()).distinct().forEach(b -> b.setFictitiousP0(p0));
+            getConfiguredBusesStream().forEach(b -> b.setFictitiousP0(0));
+            getConfiguredBusesStream().findFirst().ifPresent(b -> b.setFictitiousP0(p0));
         }
         return this;
     }
 
     @Override
     public double getFictitiousQ0() {
-        return TopologyKind.NODE_BREAKER == getVoltageLevel().getTopologyKind() ?
-                nodes.stream()
+        if (TopologyKind.NODE_BREAKER == getVoltageLevel().getTopologyKind()) {
+            return nodes.stream()
                     .mapToDouble(n -> getVoltageLevel().getNodeBreakerView().getFictitiousQ0(n))
-                    .reduce(0.0, Double::sum) :
-                getAllTerminalsStream().map(t -> t.getBusBreakerView().getBus()).distinct()
-                    .map(Bus::getFictitiousQ0)
                     .reduce(0.0, Double::sum);
+        } else {
+            return getConfiguredBusesStream().map(Bus::getFictitiousQ0).reduce(0.0, Double::sum);
+        }
     }
 
     @Override
@@ -249,7 +279,8 @@ public final class CalculatedBus implements BaseBus {
             nodes.forEach(n -> getVoltageLevel().getNodeBreakerView().setFictitiousQ0(n, 0.0));
             getVoltageLevel().getNodeBreakerView().setFictitiousQ0(nodes.getFirst(), q0);
         } else {
-            getAllTerminalsStream().map(t -> t.getBusBreakerView().getBus()).distinct().forEach(b -> b.setFictitiousQ0(q0));
+            getConfiguredBusesStream().forEach(b -> b.setFictitiousQ0(0));
+            getConfiguredBusesStream().findFirst().ifPresent(b -> b.setFictitiousQ0(q0));
         }
         return this;
     }
@@ -275,17 +306,26 @@ public final class CalculatedBus implements BaseBus {
     }
 
     public boolean isInMainConnectedComponent() {
+        if (!isBusView) {
+            return getMergedBus().map(Bus::isInMainConnectedComponent).orElse(false);
+        }
         getNetwork().ensureConnectedComponentsUpToDate(isBusView);
         return getAttributes().getConnectedComponentNumber() == ComponentConstants.MAIN_NUM;
     }
 
     @Override
     public Component getSynchronousComponent() {
+        if (!isBusView) {
+            return getMergedBus().map(Bus::getSynchronousComponent).orElse(null);
+        }
         return synchronousComponent;
     }
 
     @Override
     public boolean isInMainSynchronousComponent() {
+        if (!isBusView) {
+            return getMergedBus().map(Bus::isInMainSynchronousComponent).orElse(false);
+        }
         getNetwork().ensureSynchronousComponentsUpToDate(isBusView);
         return getAttributes().getSynchronousComponentNumber() == ComponentConstants.MAIN_NUM;
     }
@@ -571,5 +611,11 @@ public final class CalculatedBus implements BaseBus {
                 }
             }
         }
+    }
+
+    private Stream<Bus> getConfiguredBusesStream() {
+        return buses.stream().map(busId -> getVoltageLevel().getBusBreakerView().getBus(busId))
+                .filter(Objects::nonNull)
+                .distinct();
     }
 }

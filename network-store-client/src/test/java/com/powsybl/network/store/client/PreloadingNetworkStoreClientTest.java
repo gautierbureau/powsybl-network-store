@@ -17,26 +17,18 @@ import com.powsybl.iidm.network.extensions.ActivePowerControl;
 import com.powsybl.iidm.network.extensions.GeneratorStartup;
 import com.powsybl.network.store.iidm.impl.CachedNetworkStoreClient;
 import com.powsybl.network.store.model.*;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.test.autoconfigure.web.client.RestClientTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.web.client.RestTemplateBuilder;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.junit4.SpringRunner;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.client.ExpectedCount;
 import org.springframework.test.web.client.MockRestServiceServer;
-
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ForkJoinPool;
-
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.http.HttpMethod.*;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.*;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -45,30 +37,10 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
  * @author Franck Lecuyer <franck.lecuyer at rte-france.com>
  * @author Etienne Homer <etienne.homer at rte-france.com>
  */
-@RunWith(SpringRunner.class)
+
 @RestClientTest
-public class PreloadingNetworkStoreClientTest {
-
-    // Necessary with empty @RestClientTest for this
-    // lib which doesn't have a @SpringBootApplication in
-    // its main sources.
-    @SpringBootConfiguration
-    public static class EmptyConfig {
-
-    }
-
-    // Don't use the component scanned RestClient in this test
-    // to avoid the /v1 prefix because the tests were written
-    // without it (could be considered more legible... but not
-    // terribly important. Feel free to change if needed)
-    @TestConfiguration
-    static class TestConfig {
-        @Bean
-        @Primary
-        public RestClient testClient(RestTemplateBuilder restTemplateBuilder) {
-            return new RestClientImpl(restTemplateBuilder);
-        }
-    }
+@ContextConfiguration(classes = RestClientImpl.class)
+class PreloadingNetworkStoreClientTest {
 
     @Autowired
     private RestClient restClient;
@@ -82,15 +54,15 @@ public class PreloadingNetworkStoreClientTest {
     private PreloadingNetworkStoreClient cachedClient;
     private UUID networkUuid;
 
-    @Before
-    public void setUp() throws IOException {
+    @BeforeEach
+    void setUp() {
         RestNetworkStoreClient restStoreClient = new RestNetworkStoreClient(restClient);
         cachedClient = new PreloadingNetworkStoreClient(new CachedNetworkStoreClient(new BufferedNetworkStoreClient(restStoreClient, ForkJoinPool.commonPool())), false, ForkJoinPool.commonPool());
         networkUuid = UUID.fromString("7928181c-7977-4592-ba19-88027e4254e4");
     }
 
     @Test
-    public void testSubstationCache() throws IOException {
+    void testSubstationCache() throws IOException {
         // Two successive substation retrievals, only the first should send a REST request, the second uses the cache
         Resource<SubstationAttributes> substation = Resource.substationBuilder()
                 .id("sub1")
@@ -150,7 +122,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testVoltageLevelCache() throws IOException {
+    void testVoltageLevelCache() throws IOException {
         // Two successive voltage level retrievals, only the first should send a REST request, the second uses the cache
         Resource<VoltageLevelAttributes> vl = Resource.voltageLevelBuilder()
                 .id("vl1")
@@ -210,7 +182,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testSwitchCache() throws IOException {
+    void testSwitchCache() throws IOException {
         // Two successive switch retrievals, only the first should send a REST request, the second uses the cache
         Resource<SwitchAttributes> breaker = Resource.switchBuilder()
                 .id("b1")
@@ -279,7 +251,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testGeneratorCache() throws IOException {
+    void testGeneratorCache() throws IOException {
         // Two successive generator retrievals, only the first should send a REST request, the second uses the cache
         Resource<GeneratorAttributes> generator = Resource.generatorBuilder()
                 .id("g1")
@@ -340,7 +312,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testBatteryCache() throws IOException {
+    void testBatteryCache() throws IOException {
         // Two successive battery retrievals, only the first should send a REST request, the second uses the cache
         Resource<BatteryAttributes> battery = Resource.batteryBuilder()
                 .id("b1")
@@ -408,7 +380,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testLoadCache() throws IOException {
+    void testLoadCache() throws IOException {
         // Two successive load retrievals, only the first should send a REST request, the second uses the cache
         Resource<LoadAttributes> load = Resource.loadBuilder()
                 .id("l1")
@@ -476,7 +448,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testShuntCompensatorCache() throws IOException {
+    void testShuntCompensatorCache() throws IOException {
         // Two successive shunt compensator retrievals, only the first should send a REST request, the second uses the cache
         Resource<ShuntCompensatorAttributes> shuntCompensator = Resource.shuntCompensatorBuilder()
                 .id("sc1")
@@ -537,7 +509,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testStaticVarCompensatorCache() throws IOException {
+    void testStaticVarCompensatorCache() throws IOException {
         // Two successive static var compensator retrievals, only the first should send a REST request, the second uses the cache
         Resource<StaticVarCompensatorAttributes> staticVarCompensator = Resource.staticVarCompensatorBuilder()
                 .id("svc1")
@@ -545,7 +517,7 @@ public class PreloadingNetworkStoreClientTest {
                         .voltageLevelId("vl1")
                         .name("svc1")
                         .bmax(20)
-                        .reactivePowerSetPoint(100)
+                        .localTargetQ(100)
                         .build())
                 .build();
 
@@ -559,16 +531,16 @@ public class PreloadingNetworkStoreClientTest {
         Resource<StaticVarCompensatorAttributes> staticVarCompensatorAttributesResource = cachedClient.getStaticVarCompensator(networkUuid, Resource.INITIAL_VARIANT_NUM, "svc1").orElse(null);
         assertNotNull(staticVarCompensatorAttributesResource);
         assertEquals(20, staticVarCompensatorAttributesResource.getAttributes().getBmax(), 0.001);
-        assertEquals(100, staticVarCompensatorAttributesResource.getAttributes().getReactivePowerSetPoint(), 0.001);
+        assertEquals(100, staticVarCompensatorAttributesResource.getAttributes().getLocalTargetQ(), 0.001);
 
         staticVarCompensatorAttributesResource.getAttributes().setBmax(50.);
-        staticVarCompensatorAttributesResource.getAttributes().setReactivePowerSetPoint(1500.);
+        staticVarCompensatorAttributesResource.getAttributes().setLocalTargetQ(1500.);
 
         // Second time static var compensator retrieval by Id
         staticVarCompensatorAttributesResource = cachedClient.getStaticVarCompensator(networkUuid, Resource.INITIAL_VARIANT_NUM, "svc1").orElse(null);
         assertNotNull(staticVarCompensatorAttributesResource);
         assertEquals(50., staticVarCompensatorAttributesResource.getAttributes().getBmax(), 0.001);
-        assertEquals(1500., staticVarCompensatorAttributesResource.getAttributes().getReactivePowerSetPoint(), 0.001);
+        assertEquals(1500., staticVarCompensatorAttributesResource.getAttributes().getLocalTargetQ(), 0.001);
 
         // Remove component
         assertEquals(1, cachedClient.getStaticVarCompensators(networkUuid, Resource.INITIAL_VARIANT_NUM).size());
@@ -582,7 +554,7 @@ public class PreloadingNetworkStoreClientTest {
         assertEquals(1, staticVarCompensators.size());
         assertNotNull(staticVarCompensators.get(0));
         assertEquals(20., staticVarCompensators.get(0).getAttributes().getBmax(), 0.001);
-        assertEquals(100., staticVarCompensators.get(0).getAttributes().getReactivePowerSetPoint(), 0.001);
+        assertEquals(100., staticVarCompensators.get(0).getAttributes().getLocalTargetQ(), 0.001);
 
         // Update static var compensator
         Resource<StaticVarCompensatorAttributes> updateStaticVarCompensator = Resource.staticVarCompensatorBuilder()
@@ -591,7 +563,7 @@ public class PreloadingNetworkStoreClientTest {
                         .voltageLevelId("vl1")
                         .name("svc1")
                         .bmax(50)
-                        .reactivePowerSetPoint(1500)
+                        .localTargetQ(1500)
                         .build())
                 .build();
         cachedClient.updateStaticVarCompensators(networkUuid, List.of(updateStaticVarCompensator), null);
@@ -599,13 +571,13 @@ public class PreloadingNetworkStoreClientTest {
         assertEquals(1, staticVarCompensators.size());
         assertNotNull(staticVarCompensators.get(0));
         assertEquals(50., staticVarCompensators.get(0).getAttributes().getBmax(), 0.001);
-        assertEquals(1500., staticVarCompensators.get(0).getAttributes().getReactivePowerSetPoint(), 0.001);
+        assertEquals(1500., staticVarCompensators.get(0).getAttributes().getLocalTargetQ(), 0.001);
 
         server.verify();
     }
 
     @Test
-    public void testVscConverterStationCache() throws IOException {
+    void testVscConverterStationCache() throws IOException {
         // Two successive vsc converter station retrievals, only the first should send a REST request, the second uses the cache
         Resource<VscConverterStationAttributes> vscConverterStation = Resource.vscConverterStationBuilder()
                 .id("vsc1")
@@ -666,7 +638,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testLccConverterStationCache() throws IOException {
+    void testLccConverterStationCache() throws IOException {
         // Two successive lcc converter station retrievals, only the first should send a REST request, the second uses the cache
         Resource<LccConverterStationAttributes> lccConverterStation = Resource.lccConverterStationBuilder()
                 .id("lcc1")
@@ -727,7 +699,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testGroundCache() throws IOException {
+    void testGroundCache() throws IOException {
         // Two successive ground retrievals, only the first should send a REST request, the second uses the cache
         Resource<GroundAttributes> ground = Resource.groundBuilder()
                 .id("groundId")
@@ -800,7 +772,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testTwoWindingsTransformerCache() throws IOException {
+    void testTwoWindingsTransformerCache() throws IOException {
         // Two successive two windings transformer retrievals, only the first should send a REST request, the second uses the cache
         Resource<TwoWindingsTransformerAttributes> twoWindingsTransformer = Resource.twoWindingsTransformerBuilder()
                 .id("tw1")
@@ -868,7 +840,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testThreeWindingsTransformerCache() throws IOException {
+    void testThreeWindingsTransformerCache() throws IOException {
         // Two successive three windings transformer retrievals, only the first should send a REST request, the second uses the cache
         Resource<ThreeWindingsTransformerAttributes> threeWindingsTransformer = Resource.threeWindingsTransformerBuilder()
                 .id("tw1")
@@ -957,7 +929,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testLineCache() throws IOException {
+    void testLineCache() throws IOException {
         // Two successive line retrievals, only the first should send a REST request, the second uses the cache
         Resource<LineAttributes> line = Resource.lineBuilder()
                 .id("l1")
@@ -1020,7 +992,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testHvdcLineCache() throws IOException {
+    void testHvdcLineCache() throws IOException {
         // Two successive hvdc line retrievals, only the first should send a REST request, the second uses the cache
         Resource<HvdcLineAttributes> hvdcLine = Resource.hvdcLineBuilder()
                 .id("hvdc1")
@@ -1082,7 +1054,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testBoundaryLineCache() throws IOException {
+    void testBoundaryLineCache() throws IOException {
         // Two successive boundary line retrievals, only the first should send a REST request, the second uses the cache
         Resource<BoundaryLineAttributes> boundaryLine = Resource.boundaryLineBuilder()
                 .id("dl1")
@@ -1142,7 +1114,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testTieLineCache() throws IOException {
+    void testTieLineCache() throws IOException {
         // Two successive tie line retrievals, only the first should send a REST request, the second uses the cache
         Resource<TieLineAttributes> tieLine = Resource.tieLineBuilder()
                 .id("tieLine1")
@@ -1202,7 +1174,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testConfiguredBusCache() throws IOException {
+    void testConfiguredBusCache() throws IOException {
         // Two successive configured bus retrievals, only the first should send a REST request, the second uses the cache
         Resource<ConfiguredBusAttributes> configuredBus = Resource.configuredBusBuilder()
                 .id("cb1")
@@ -1263,7 +1235,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testGetExtensionCache() throws IOException {
+    void testGetExtensionCache() throws IOException {
         String identifiableId1 = "GEN";
         String identifiableId2 = "GEN1";
 
@@ -1300,11 +1272,10 @@ public class PreloadingNetworkStoreClientTest {
         assertEquals(0.5, activePowerControlAttributes.getParticipationFactor(), 0);
 
         server.verify();
-        server.reset();
     }
 
     @Test
-    public void testGetExtensionEmptyExtensionAttributesCache() throws IOException {
+    void testGetExtensionEmptyExtensionAttributesCache() throws IOException {
         // Two successive ExtensionAttributes retrieval, only the first should send a REST request, the second uses the cache
         String identifiableId1 = "GEN";
         String extensionAttributes = objectMapper.writerFor(new TypeReference<Map<String, ExtensionAttributes>>() {
@@ -1321,11 +1292,10 @@ public class PreloadingNetworkStoreClientTest {
         assertFalse(apc1Attributes.isPresent());
 
         server.verify();
-        server.reset();
     }
 
     @Test
-    public void testGetExtensionsCache() throws IOException {
+    void testGetExtensionsCache() throws IOException {
         String identifiableId1 = "GEN";
         String identifiableId2 = "GEN1";
 
@@ -1368,11 +1338,10 @@ public class PreloadingNetworkStoreClientTest {
         cachedClient.getExtensionAttributes(networkUuid, Resource.INITIAL_VARIANT_NUM, ResourceType.GENERATOR, identifiableId1, "activepowercontrol");
 
         server.verify();
-        server.reset();
     }
 
     @Test
-    public void testGetExtensionsEmptyExtensionAttributesCache() throws IOException {
+    void testGetExtensionsEmptyExtensionAttributesCache() throws IOException {
         String identifiableId1 = "GEN";
         String identifiableId2 = "GEN1";
 
@@ -1393,7 +1362,6 @@ public class PreloadingNetworkStoreClientTest {
         assertEquals(0, extensionAttributesMap.size());
 
         server.verify();
-        server.reset();
     }
 
     private void loadTwoIdentifiablesToCache(String identifiableId1, String identifiableId2) throws JsonProcessingException {
@@ -1419,7 +1387,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testGetExtensionsCacheWithClonedNetwork() throws IOException {
+    void testGetExtensionsCacheWithClonedNetwork() throws IOException {
         int targetVariantNum = 1;
         String targetVariantId = "new_variant";
         String identifiableId1 = "GEN";
@@ -1468,11 +1436,10 @@ public class PreloadingNetworkStoreClientTest {
                 identifiableId1);
         assertEquals(2, extensionAttributesByIdentifiableId.size());
         server.verify();
-        server.reset();
     }
 
     @Test
-    public void testGetOperationalLimitsGroupCache() throws IOException {
+    void testGetOperationalLimitsGroupCache() throws IOException {
         String identifiableId1 = "lineId";
         String identifiableId2 = "LINE1";
 
@@ -1527,7 +1494,6 @@ public class PreloadingNetworkStoreClientTest {
         assertTrue(olg2Attributes.isPresent());
 
         server.verify();
-        server.reset();
     }
 
     private void loadTwoLinesToCache(String identifiableId1, String identifiableId2) throws JsonProcessingException {
@@ -1555,7 +1521,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testGetOperationalLimitsGroupEmptyCache() throws IOException {
+    void testGetOperationalLimitsGroupEmptyCache() throws IOException {
         String identifiableId1 = "LINE1";
         String identifiableId2 = "LINE2";
         loadTwoLinesToCache(identifiableId1, identifiableId2);
@@ -1572,11 +1538,10 @@ public class PreloadingNetworkStoreClientTest {
         assertFalse(olg1Attributes.isPresent());
 
         server.verify();
-        server.reset();
     }
 
     @Test
-    public void testGetSelectedLimitsGroupCache() throws IOException {
+    void testGetSelectedLimitsGroupCache() throws IOException {
         String identifiableId1 = "line1";
         String identifiableId2 = "line2";
 
@@ -1631,7 +1596,6 @@ public class PreloadingNetworkStoreClientTest {
             Resource.INITIAL_VARIANT_NUM, ResourceType.LINE, identifiableId1, operationalLimitsGroup2, 1);
         assertTrue(olg1Attributes.isPresent());
         server.verify();
-        server.reset();
     }
 
     private OperationalLimitsGroupAttributes createOperationalLimitsGroupAttributes(String operationalLimitsGroupId) {
@@ -1652,7 +1616,7 @@ public class PreloadingNetworkStoreClientTest {
     }
 
     @Test
-    public void testGetLimitsGroupBranchCache() throws IOException {
+    void testGetLimitsGroupBranchCache() throws IOException {
         String identifiableId1 = "line1";
         String identifiableId2 = "line2";
 
@@ -1689,11 +1653,10 @@ public class PreloadingNetworkStoreClientTest {
             Resource.INITIAL_VARIANT_NUM, ResourceType.LINE, identifiableId2, 1);
         assertEquals(1, olgList2.size());
         server.verify();
-        server.reset();
     }
 
     @Test
-    public void testRemoveLimitsCache() throws IOException {
+    void testRemoveLimitsCache() throws IOException {
         String branchId1 = "line1";
         String branchId2 = "line2";
         String operationalLimitsGroup1 = "olg1";
@@ -1731,6 +1694,7 @@ public class PreloadingNetworkStoreClientTest {
                 .andExpect(method(GET));
         cachedClient.removeOperationalLimitsGroupAttributes(networkUuid, Resource.INITIAL_VARIANT_NUM, ResourceType.LINE,
                 Map.of(branchId2, Map.of(2, Set.of(operationalLimitsGroup2))));
+        cachedClient.flush(networkUuid);
         server.verify();
         server.reset();
 
@@ -1744,11 +1708,10 @@ public class PreloadingNetworkStoreClientTest {
         assertFalse(olg2Attributes.isPresent());
 
         server.verify();
-        server.reset();
     }
 
     @Test
-    public void testDeleteLimitsGroupOnClonedNetwork() throws IOException {
+    void testDeleteLimitsGroupOnClonedNetwork() throws IOException {
         int targetVariantNum = 1;
         String targetVariantId = "new_variant";
         String identifiableId1 = "lineId";
@@ -1790,6 +1753,7 @@ public class PreloadingNetworkStoreClientTest {
                 + "LimitsGroup/" + operationalLimitsGroup3 + "/side/1"))
                 .andExpect(method(GET));
         cachedClient.removeOperationalLimitsGroupAttributes(networkUuid, Resource.INITIAL_VARIANT_NUM, ResourceType.LINE, Map.of(identifiableId1, Map.of(1, Set.of(operationalLimitsGroup3))));
+        cachedClient.flush(networkUuid);
         server.verify();
         server.reset();
 
@@ -1821,6 +1785,7 @@ public class PreloadingNetworkStoreClientTest {
                 + "LimitsGroup/" + operationalLimitsGroup2 + "/side/1"))
                 .andExpect(method(GET));
         cachedClient.removeOperationalLimitsGroupAttributes(networkUuid, targetVariantNum, ResourceType.LINE, Map.of(identifiableId2, Map.of(1, Set.of(operationalLimitsGroup2))));
+        cachedClient.flush(networkUuid);
         server.verify();
         server.reset();
 
@@ -1842,6 +1807,5 @@ public class PreloadingNetworkStoreClientTest {
                 Resource.INITIAL_VARIANT_NUM, ResourceType.LINE, identifiableId2, operationalLimitsGroup2, 1);
         assertTrue(olg2Attributes.isPresent());
         server.verify();
-        server.reset();
     }
 }

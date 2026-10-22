@@ -8,10 +8,14 @@
 package com.powsybl.network.store.iidm.impl.extensions;
 
 import com.powsybl.commons.PowsyblException;
+import com.powsybl.iidm.network.extensions.PilotPoint;
 import com.powsybl.iidm.network.extensions.PilotPointAdder;
 import com.powsybl.network.store.iidm.impl.NetworkImpl;
 import com.powsybl.network.store.model.PilotPointAttributes;
+import com.powsybl.network.store.model.PilotPointBusAttributes;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -22,7 +26,9 @@ public class PilotPointAdderImpl implements PilotPointAdder {
 
     private final ControlZoneAdderImpl parent;
 
-    private List<String> busbarSectionsOrBusesIds;
+    private List<PilotPoint.BusRef> buses = Collections.emptyList();
+
+    private List<String> busbarSectionIds = Collections.emptyList();
 
     private double targetV = Double.NaN;
 
@@ -31,8 +37,14 @@ public class PilotPointAdderImpl implements PilotPointAdder {
     }
 
     @Override
-    public PilotPointAdderImpl withBusbarSectionsOrBusesIds(List<String> busbarSectionsOrBusesIds) {
-        this.busbarSectionsOrBusesIds = Objects.requireNonNull(busbarSectionsOrBusesIds);
+    public PilotPointAdderImpl withBuses(List<PilotPoint.BusRef> buses) {
+        this.buses = Objects.requireNonNull(buses);
+        return this;
+    }
+
+    @Override
+    public PilotPointAdderImpl withBusbarSectionIds(List<String> busbarSectionIds) {
+        this.busbarSectionIds = Objects.requireNonNull(busbarSectionIds);
         return this;
     }
 
@@ -44,19 +56,25 @@ public class PilotPointAdderImpl implements PilotPointAdder {
 
     @Override
     public ControlZoneAdderImpl add() {
-        if (busbarSectionsOrBusesIds.isEmpty()) {
-            throw new PowsyblException("Empty busbar section or bus ID list");
+        if (buses.isEmpty() && busbarSectionIds.isEmpty()) {
+            throw new PowsyblException("Empty pilot point bus and busbar section ID list");
         }
-        for (String busbarSectionsOrBusesId : busbarSectionsOrBusesIds) {
-            if (busbarSectionsOrBusesId == null) {
-                throw new PowsyblException("Null busbar section or bus ID");
+        for (PilotPoint.BusRef bus : buses) {
+            if (bus == null) {
+                throw new PowsyblException("Null pilot point bus");
+            }
+        }
+        for (String busbarSectionId : busbarSectionIds) {
+            if (busbarSectionId == null) {
+                throw new PowsyblException("Null pilot point busbar section ID");
             }
         }
         if (Double.isNaN(targetV)) {
             throw new PowsyblException("Invalid target voltage");
         }
         PilotPointAttributes pilotPointAttributes = PilotPointAttributes.builder()
-                .busbarSectionsOrBusesIds(busbarSectionsOrBusesIds)
+                .buses(buses.stream().map(bus -> new PilotPointBusAttributes(bus.voltageLevelId(), bus.busId())).toList())
+                .busbarSectionIds(new ArrayList<>(busbarSectionIds))
                 .targetV(targetV)
                 .build();
         NetworkImpl network = parent.getNetwork();

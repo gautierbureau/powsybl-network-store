@@ -30,6 +30,10 @@ public interface NetworkStoreClient {
 
     Optional<Resource<NetworkAttributes>> getNetwork(UUID networkUuid, int variantNum);
 
+    default boolean networkExists(UUID networkUuid) {
+        return getNetwork(networkUuid, 0).isPresent();
+    }
+
     void deleteNetwork(UUID networkUuid);
 
     void deleteNetwork(UUID networkUuid, int variantNum);
@@ -343,7 +347,7 @@ public interface NetworkStoreClient {
      */
     Map<String, Map<String, ExtensionAttributes>> getAllExtensionsAttributesByResourceType(UUID networkUuid, int variantNum, ResourceType resourceType);
 
-    void removeExtensionAttributes(UUID networkUuid, int variantNum, ResourceType resourceType, String identifiableId, String extensionName);
+    void removeExtensionsAttributes(UUID networkUuid, int variantNum, ResourceType resourceType, Map<String, Set<String>> extensionsByIdentifiableId);
 
     // Limits Attributes
     /**

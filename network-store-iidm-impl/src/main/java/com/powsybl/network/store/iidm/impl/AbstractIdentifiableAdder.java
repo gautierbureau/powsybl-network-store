@@ -26,6 +26,8 @@ abstract class AbstractIdentifiableAdder<T extends AbstractIdentifiableAdder<T>>
 
     private boolean fictitious = false;
 
+    private boolean equivalent = false;
+
     AbstractIdentifiableAdder(NetworkObjectIndex index) {
         this.index = index;
     }
@@ -72,6 +74,15 @@ abstract class AbstractIdentifiableAdder<T extends AbstractIdentifiableAdder<T>>
         return (T) this;
     }
 
+    protected boolean isEquivalent() {
+        return equivalent;
+    }
+
+    public T setEquivalent(boolean equivalent) {
+        this.equivalent = equivalent;
+        return (T) this;
+    }
+
     protected String checkAndGetUniqueId() {
         if (id == null) {
             throw new PowsyblException(getTypeDescription() + " id is not set");
@@ -106,6 +117,9 @@ abstract class AbstractIdentifiableAdder<T extends AbstractIdentifiableAdder<T>>
         if (voltageLevel.getTopologyKind() == TopologyKind.NODE_BREAKER) {
             throw new ValidationException(this, "bus only used in a bus breaker topology");
         }
+        if (connectionBus == null) {
+            throw new ValidationException(this, "connectable bus is not set");
+        }
         if (index.getConfiguredBus(connectionBus).isEmpty()) {
             throw new ValidationException(this, "connectable bus '" + connectionBus + "' not found");
         }
@@ -114,6 +128,9 @@ abstract class AbstractIdentifiableAdder<T extends AbstractIdentifiableAdder<T>>
     public void checkNode(Integer node, VoltageLevel voltageLevel) {
         if (voltageLevel.getTopologyKind() == TopologyKind.BUS_BREAKER) {
             throw new ValidationException(this, "node only used in a node breaker topology");
+        }
+        if (node == null) {
+            throw new ValidationException(this, "node is not set");
         }
 
         Terminal terminal = voltageLevel.getNodeBreakerView().getTerminal(node);

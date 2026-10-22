@@ -93,8 +93,9 @@ public abstract class AbstractLoadingLimits<S, O extends LimitsOwner<S>, T exten
 
     @Override
     public T setPermanentLimit(double permanentLimit) {
-        ValidationUtil.checkPermanentLimit(owner, permanentLimit, getTemporaryLimits(), owner.getIdentifiable().getNetwork().getMinValidationLevel(), owner.getIdentifiable().getNetwork()
-                .getReportNodeContext().getReportNode());
+        ValidationUtil.checkPermanentLimit(owner, permanentLimit, getDetectionKind(), getTemporaryLimits(),
+                owner.getIdentifiable().getNetwork().getMinValidationLevel(),
+                owner.getIdentifiable().getNetwork().getReportNodeContext().getReportNode());
         attributes.setPermanentLimit(permanentLimit);
         return (T) this;
     }
@@ -184,5 +185,17 @@ public abstract class AbstractLoadingLimits<S, O extends LimitsOwner<S>, T exten
     @Override
     protected void persistProperties(Map<String, String> properties) {
         owner.getIdentifiable().updateResourceWithoutNotification(r -> setProperties(properties));
+    }
+
+    @Override
+    public String getPermanentLimitName() {
+        // FIXME: implements it with the network store server part
+        return LoadingLimits.DEFAULT_PERMANENT_LIMIT_NAME;
+    }
+
+    @Override
+    public LoadingLimits setPermanentLimitName(String name) {
+        // FIXME: implements it with the network store server part
+        return this;
     }
 }
