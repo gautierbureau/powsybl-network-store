@@ -421,7 +421,7 @@ public class GeneratorImpl extends AbstractRegulatingInjection<Generator, Genera
 
     @Override
     public <E extends Extension<Generator>> boolean removeExtension(Class<E> type) {
-        super.removeExtension(type);
+        boolean removed = super.removeExtension(type);
         if (type == GeneratorEntsoeCategory.class) {
             var resource = getResource();
             if (resource.getAttributes().getEntsoeCategoryAttributes() != null) {
@@ -454,6 +454,6 @@ public class GeneratorImpl extends AbstractRegulatingInjection<Generator, Genera
             }
             return false;
         }
-        return false;
+        return removed;
     }
 }
