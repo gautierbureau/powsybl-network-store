@@ -168,6 +168,71 @@ class ComponentTest {
         assertEquals(1, network.getBusView().getBusStream().map(b -> b.getConnectedComponent().getNum()).collect(Collectors.toSet()).size());
     }
 
+    @Test
+    void testNodeBreakerBusBreakerViewComponent() {
+        Network network = CreateNetworksUtil.createNodeBreakerNetworkWithLine();
+
+        // the components of the bus view calculated first
+        assertTrue(network.getGenerator("G").getTerminal().getBusView().getBus().isInMainConnectedComponent());
+
+        // a bus of the bus-breaker view is in the component of the bus of the bus view it is part of
+        Bus bus = network.getGenerator("G").getTerminal().getBusBreakerView().getBus();
+        assertTrue(bus.isInMainConnectedComponent());
+        assertTrue(bus.isInMainSynchronousComponent());
+        assertEquals(ComponentConstants.MAIN_NUM, bus.getConnectedComponent().getNum());
+        assertEquals(ComponentConstants.MAIN_NUM, bus.getSynchronousComponent().getNum());
+
+        network.getLine("L1").getTerminal1().disconnect();
+        assertTrue(network.getGenerator("G").getTerminal().getBusBreakerView().getBus().isInMainConnectedComponent());
+        Bus otherBus = network.getLoad("LD").getTerminal().getBusBreakerView().getBus();
+        assertFalse(otherBus.isInMainConnectedComponent());
+        assertFalse(otherBus.isInMainSynchronousComponent());
+        assertEquals(1, otherBus.getConnectedComponent().getNum());
+    }
+
+    @Test
+    void testMixedTopologyBusBreakerViewComponent() {
+        Network network = Network.create("mixed", "test");
+        Substation substation = network.newSubstation().setId("S").add();
+        VoltageLevel nodeBreakerVl = substation.newVoltageLevel()
+                .setId("NB")
+                .setNominalV(400.0)
+                .setTopologyKind(TopologyKind.NODE_BREAKER)
+                .add();
+        nodeBreakerVl.getNodeBreakerView().newBusbarSection().setId("BBS").setNode(0).add();
+        nodeBreakerVl.getNodeBreakerView().newBreaker().setId("BR1").setNode1(0).setNode2(1).setOpen(false).setRetained(true).add();
+        nodeBreakerVl.newLoad().setId("LD1").setNode(1).setP0(1).setQ0(1).add();
+        nodeBreakerVl.getNodeBreakerView().newBreaker().setId("BR2").setNode1(0).setNode2(2).setOpen(false).add();
+        nodeBreakerVl.getNodeBreakerView().newBreaker().setId("BR3").setNode1(0).setNode2(3).setOpen(true).setRetained(true).add();
+        nodeBreakerVl.newLoad().setId("LD3").setNode(3).setP0(1).setQ0(1).add();
+        VoltageLevel busBreakerVl = substation.newVoltageLevel()
+                .setId("BB")
+                .setNominalV(400.0)
+                .setTopologyKind(TopologyKind.BUS_BREAKER)
+                .add();
+        busBreakerVl.getBusBreakerView().newBus().setId("B").add();
+        busBreakerVl.newLoad().setId("LD").setBus("B").setConnectableBus("B").setP0(1).setQ0(1).add();
+        network.newLine()
+                .setId("L")
+                .setVoltageLevel1("NB")
+                .setNode1(2)
+                .setVoltageLevel2("BB")
+                .setBus2("B")
+                .setConnectableBus2("B")
+                .setR(1)
+                .setX(1)
+                .add();
+
+        // a bus of the bus-breaker view of the node/breaker voltage level, in a network with bus/breaker voltage levels
+        Bus bus = network.getLoad("LD1").getTerminal().getBusBreakerView().getBus();
+        assertTrue(bus.isInMainConnectedComponent());
+        assertTrue(bus.isInMainSynchronousComponent());
+        assertEquals(ComponentConstants.MAIN_NUM, bus.getConnectedComponent().getNum());
+        assertTrue(network.getLoad("LD").getTerminal().getBusBreakerView().getBus().isInMainConnectedComponent());
+        // the load behind the open breaker, alone in its component
+        assertFalse(network.getLoad("LD3").getTerminal().getBusBreakerView().getBus().isInMainConnectedComponent());
+    }
+
     private void testBusComponent(Bus bus, int componentNum, int componentSize) {
         if (ComponentConstants.MAIN_NUM == componentNum) {
             assertTrue(bus.isInMainConnectedComponent());

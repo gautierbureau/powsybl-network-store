@@ -198,7 +198,33 @@ public final class CalculatedBus implements BaseBus {
 
     @Override
     public Component getConnectedComponent() {
+        if (!isBusView) {
+            return getMergedBus().map(Bus::getConnectedComponent).orElse(null);
+        }
         return connectedComponent;
+    }
+
+    /**
+     * The bus of the bus view that this bus of the bus-breaker view of a node/breaker topology is part of. As a configured
+     * bus of a bus/breaker topology, it is in the components of that bus: the components are calculated on the bus view,
+     * as in powsybl-core, the buses of the bus-breaker view of a network mixing both topologies being of both kinds.
+     */
+    private Optional<Bus> getMergedBus() {
+        VoltageLevelImpl voltageLevel = (VoltageLevelImpl) getVoltageLevel();
+        // the buses of the bus view by number, calculated if they are not yet
+        List<Bus> mergedBuses = ((VoltageLevelBusViewImpl) voltageLevel.getBusView()).getBuses();
+        VoltageLevelAttributes vlAttributes = voltageLevel.getResource().getAttributes();
+        Map<Integer, Integer> nodesToCalculatedBuses = vlAttributes.getNodeToCalculatedBusForBusBreakerView();
+        Map<Integer, Integer> nodesToMergedBuses = vlAttributes.getNodeToCalculatedBusForBusView();
+        if (MapUtils.isEmpty(nodesToCalculatedBuses) || MapUtils.isEmpty(nodesToMergedBuses)) {
+            return Optional.empty();
+        }
+        return nodesToCalculatedBuses.entrySet().stream()
+                .filter(entry -> entry.getValue() == calculatedBusNum)
+                .map(entry -> nodesToMergedBuses.get(entry.getKey()))
+                .filter(Objects::nonNull)
+                .findFirst()
+                .map(mergedBuses::get);
     }
 
     private CalculatedBusAttributes getAttributes() {
@@ -280,17 +306,26 @@ public final class CalculatedBus implements BaseBus {
     }
 
     public boolean isInMainConnectedComponent() {
+        if (!isBusView) {
+            return getMergedBus().map(Bus::isInMainConnectedComponent).orElse(false);
+        }
         getNetwork().ensureConnectedComponentsUpToDate(isBusView);
         return getAttributes().getConnectedComponentNumber() == ComponentConstants.MAIN_NUM;
     }
 
     @Override
     public Component getSynchronousComponent() {
+        if (!isBusView) {
+            return getMergedBus().map(Bus::getSynchronousComponent).orElse(null);
+        }
         return synchronousComponent;
     }
 
     @Override
     public boolean isInMainSynchronousComponent() {
+        if (!isBusView) {
+            return getMergedBus().map(Bus::isInMainSynchronousComponent).orElse(false);
+        }
         getNetwork().ensureSynchronousComponentsUpToDate(isBusView);
         return getAttributes().getSynchronousComponentNumber() == ComponentConstants.MAIN_NUM;
     }
