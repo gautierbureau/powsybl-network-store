@@ -61,7 +61,7 @@
         <sonar.organization>powsybl-ci-github</sonar.organization>
         <sonar.projectKey>com.powsybl:powsybl-network-store</sonar.projectKey>
         <assertj.version>3.27.7</assertj.version>
-        <powsybl-core.version>7.5.0-SNAPSHOT</powsybl-core.version>
+        <powsybl-core.version>7.4.0-tcb-SNAPSHOT</powsybl-core.version>
     </properties>
 
     <modules>
