@@ -8,6 +8,8 @@ package com.powsybl.network.store.iidm.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.powsybl.dynawo.extensions.api.generator.RpclType;
+import com.powsybl.dynawo.extensions.api.generator.SynchronousGeneratorProperties;
 import com.powsybl.network.store.model.*;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -41,6 +43,24 @@ class AttributesTest {
         assertEquals(5.0, deserialized.getMarginalCost(), 0.1);
         assertEquals(3.0, deserialized.getPlannedOutageRate(), 0.1);
         assertEquals(5.0, deserialized.getForcedOutageRate(), 0.1);
+    }
+
+    @Test
+    void testSynchronousGeneratorPropertiesSerDeserialization() throws JsonProcessingException {
+        SynchronousGeneratorPropertiesAttributes attributes = SynchronousGeneratorPropertiesAttributes.builder()
+                .numberOfWindings(SynchronousGeneratorProperties.Windings.FOUR_WINDINGS)
+                .governor("Proportional")
+                .voltageRegulator("Proportional")
+                .auxiliaries(true)
+                .rpcl(RpclType.NONE)
+                .uva(SynchronousGeneratorProperties.Uva.LOCAL)
+                .build();
+        ObjectMapper mapper = new ObjectMapper();
+        String serialized = mapper.writeValueAsString(attributes);
+        assertEquals("{\"extensionName\":\"synchronousGeneratorProperties\",\"numberOfWindings\":\"FOUR_WINDINGS\",\"governor\":\"Proportional\","
+                + "\"voltageRegulator\":\"Proportional\",\"auxiliaries\":true,\"internalTransformer\":false,\"rpcl\":\"NONE\",\"uva\":\"LOCAL\","
+                + "\"aggregated\":false,\"qlim\":false}", serialized);
+        assertEquals(attributes, mapper.readValue(serialized, ExtensionAttributes.class));
     }
 
     @Test
